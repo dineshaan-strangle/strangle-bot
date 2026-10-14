@@ -1,7 +1,10 @@
 import os
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID") or os.environ.get("CHAT_ID")
+DELTA_API_KEY = os.environ.get("DELTA_API_KEY")
+DELTA_API_SECRET = os.environ.get("DELTA_API_SECRET")
 from flask import Flask
 import threading
-
 app = Flask(__name__)
 @app.route('/')
 def home():
