@@ -15,10 +15,6 @@ import time, hmac, hashlib, requests, json, datetime, os
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 from telegram.request import HTTPXRequest
-TELEGRAM_BOT_TOKEN = "8747603637:AAGyK1jjOGg0HkI3Qm47tjonEUDxJHQin2U"
-TELEGRAM_CHAT_ID = "6776594170"
-DELTA_API_KEY = "tHsvKaoARef8D6EAPeY0ZmMpbq366I"
-DELTA_API_SECRET = "dcfT8QVPC9A4PFfUkbCaRi85dYCSAD84txjPipWIXlvcce7xizAbwK5frc6t"
 DELTA_BASE_URL = "https://api.india.delta.exchange"
 selection = {"pe": None, "ce": None, "mode": None}
 SL_MULTIPLIER = 2.0
