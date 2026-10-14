@@ -475,7 +475,7 @@ async def scantrade_command(update, context):
     selection["pe"]=suggested_pe; selection["ce"]=suggested_ce; selection["mode"]="MOVE_BOTH"
     text=f"{LAST_SCAN_HEADER}\n\nCurrent QTY: {QTY} lot(s) = {abs(get_lot_size_for_trade()):.4f} BTC\nQTY maathanumna /qty 3 nu type pannunga"
     kb=[[InlineKeyboardButton(f"TRADE PE {suggested_pe} + CE {suggested_ce} (Both) QTY:{QTY}", callback_data="EXECUTE_BOTH")],[InlineKeyboardButton("Move CE Only", callback_data="MOVE_CE"),InlineKeyboardButton("Move PE Only", callback_data="MOVE_PE")],[InlineKeyboardButton("MANUAL TRADE BOTH", callback_data="MOVE_BOTH")],[InlineKeyboardButton("LIVE PNL", callback_data="LIVE_PNL")],[InlineKeyboardButton("CLOSE BOT ONLY", callback_data="CLOSE_ALL")],[InlineKeyboardButton("No Trade", callback_data="NO_TRADE")]]
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb))
+    await update.effective_message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb))
 
 def build_keyboard_live(atm, combined, calls, puts, spot):
     mode=selection.get("mode","MOVE_BOTH"); ideal=int(combined*2); pe_c=atm-ideal; ce_c=atm+ideal; avail=sorted(calls.keys())
