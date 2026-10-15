@@ -111,12 +111,23 @@ def get_atm_info_live():
     if p_prem<10: p_prem*=spot
     return int(spot), atm, int(c_prem), int(p_prem), calls, puts
 def get_ltp_live_strict(strike, otype, calls, puts, spot):
-        # FIX: BTC la 78800 maadiri strike illana nearest strike edukku
-    avail_dict = calls if otype=="C" else puts
-    if strike not in avail_dict:
+    try:
+        avail_dict = calls if otype=="C" else puts
         if not avail_dict:
             return spot, 0, "", {}
-        nearest = min(avail_dict.keys(), key=lambda x: abs(x - strike))
+        if strike not in avail_dict:
+            nearest = min(avail_dict.keys(), key=lambda x: abs(x - strike))
+            print(f"Strike {strike} not found, using nearest {nearest}")
+            strike = nearest
+        prod = avail_dict[strike]
+        tick = delta_request("GET", f"/tickers/{prod['symbol']}", auth_required=False)['result']
+        ltp = float(tick.get('mark_price') or 0)
+        if ltp < 10:
+            ltp = spot
+        return ltp, prod.get('id', 0), prod.get('symbol', ''), prod
+    except Exception as e:
+        print(f"get_ltp_live_strict error for {strike} {otype}: {e}")
+        return spot, 0, "", {}
         print(f"Strike {strike} not found, using nearest {nearest}")
         strike = nearest
     prod = avail_dict[strike]
