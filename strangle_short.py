@@ -615,8 +615,8 @@ def main():
     app.add_handler(CommandHandler("timersettings",timersettings_command))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.post_init=post_init
-    app.job_queue.run_repeating(smart_trail_job, interval=0:01:00, first=10, job_kwargs={'misfire_grace_time':60})
-    app.job_queue.run_repeating(individual_sl_monitor_job, interval=0:01:00, first=12, job_kwargs={'misfire_grace_time':60})
+    app.job_queue.run_repeating(smart_trail_job, interval=60, first=10, job_kwargs={'misfire_grace_time':60})
+    app.job_queue.run_repeating(individual_sl_monitor_job, interval=60, first=12, job_kwargs={'misfire_grace_time':60})
     app.job_queue.run_repeating(timer_auto_job, interval=60, first=10, job_kwargs={'misfire_grace_time':60})
     print(f"V100 FINAL FIXED - READY")
     app.run_polling(drop_pending_updates=True)
