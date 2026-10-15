@@ -111,11 +111,15 @@ def get_atm_info_live():
     if p_prem<10: p_prem*=spot
     return int(spot), atm, int(c_prem), int(p_prem), calls, puts
 def get_ltp_live_strict(strike, otype, calls, puts, spot):
-    prod=calls[strike] if otype=="C" else puts[strike]
-    tick=delta_request("GET",f"/tickers/{prod['symbol']}",auth_required=False)['result']
-    ltp=float(tick.get('mark_price'))
-    if ltp<10: ltp*=spot
-    return ltp, prod['id'], prod['symbol'], prod
+        # FIX: BTC la 78800 maadiri strike illana nearest strike edukku
+    avail_dict = calls if otype=="C" else puts
+    if strike not in avail_dict:
+        if not avail_dict:
+            return spot, 0, "", {}
+        nearest = min(avail_dict.keys(), key=lambda x: abs(x - strike))
+        print(f"Strike {strike} not found, using nearest {nearest}")
+        strike = nearest
+    prod = avail_dict[strike]
 
 BOT_PRODUCTS_FILE = "bot_products.json"
 def load_bot_products():
