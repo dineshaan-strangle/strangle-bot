@@ -30,18 +30,21 @@ PREV_PE_STRIKE = None
 PREV_CE_STRIKE = None
 PREV_TOTAL_USD = 0.0
 CONFIG_FILE = "timer_config.json"
-QTY = 1
-TIMER_CONFIG = {"qty":1,"auto_on":"21:30","auto_off":"15:15","manual_override":None,"custom_range":None,"trading_active":True}
+QTY = 25
+AUTO_QTY_MODE = True
+FUNDS_PER_50_LOTS = 56.93
+TIMER_CONFIG = {"qty":25,"auto_qty":True,"auto_on":"21:30","auto_off":"15:15","manual_override":None,"custom_range":None,"trading_active":True}
 
 def load_config():
-    global QTY, TIMER_CONFIG
+    global QTY, TIMER_CONFIG, AUTO_QTY_MODE
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE,'r') as f:
-                data=json.load(f); TIMER_CONFIG.update(data); QTY=TIMER_CONFIG.get("qty",1)
+                data=json.load(f); TIMER_CONFIG.update(data); QTY=TIMER_CONFIG.get("qty",25); AUTO_QTY_MODE=TIMER_CONFIG.get("auto_qty",True)
         except: pass
 def save_config():
     TIMER_CONFIG["qty"]=QTY
+    TIMER_CONFIG["auto_qty"]=AUTO_QTY_MODE
     with open(CONFIG_FILE,'w') as f: json.dump(TIMER_CONFIG,f)
 def parse_time_str(tstr):
     try: h,m=map(int,tstr.split(':')); return datetime.time(h,m)
@@ -62,7 +65,37 @@ def is_trading_allowed():
         if st<=et: return st<=now<=et
         else: return now>=st or now<=et
     return TIMER_CONFIG.get("trading_active",True)
-def get_lot_size_for_trade(): return -0.001 * float(QTY)
+
+def get_wallet_balance():
+    try:
+        j = delta_request("GET","/wallet/balances",auth_required=True)
+        for b in j.get('result',[]):
+            if b.get('asset_symbol') in ['USD','USDT','USDC']:
+                return float(b.get('available_balance', 64.96))
+        return 64.96
+    except:
+        return 64.96
+
+def get_lot_size_for_trade():
+    global QTY, AUTO_QTY_MODE
+    if AUTO_QTY_MODE:
+        try:
+            available = get_wallet_balance()
+            funds_per_lot = FUNDS_PER_50_LOTS / 50.0
+            max_total_lots = int(available / funds_per_lot)
+            qty_per_side = max_total_lots // 2
+            if qty_per_side < 1: qty_per_side = 1
+            if qty_per_side > 50: qty_per_side = 50
+            return -0.001 * float(qty_per_side)
+        except:
+            return -0.001 * float(QTY)
+    else:
+        return -0.001 * float(QTY)
+
+def get_current_qty_per_side():
+    lot = abs(get_lot_size_for_trade())
+    return int(lot*1000)
+
 load_config()
 def get_trailing_sl(collected_premium, current_combined_premium):
     activation=collected_premium*0.60; initial_sl=collected_premium*0.50; slab=collected_premium*0.10
@@ -117,7 +150,6 @@ def get_ltp_live_strict(strike, otype, calls, puts, spot):
             return spot, 0, "", {}
         if strike not in avail_dict:
             nearest = min(avail_dict.keys(), key=lambda x: abs(x - strike))
-            print(f"Strike {strike} not found, using nearest {nearest}")
             strike = nearest
         prod = avail_dict[strike]
         tick = delta_request("GET", f"/tickers/{prod['symbol']}", auth_required=False)['result']
@@ -126,12 +158,7 @@ def get_ltp_live_strict(strike, otype, calls, puts, spot):
             ltp = spot
         return ltp, prod.get('id', 0), prod.get('symbol', ''), prod
     except Exception as e:
-        print(f"get_ltp_live_strict error for {strike} {otype}: {e}")
         return spot, 0, "", {}
-        print(f"Strike {strike} not found, using nearest {nearest}")
-        strike = nearest
-    prod = avail_dict[strike]
-
 BOT_PRODUCTS_FILE = "bot_products.json"
 def load_bot_products():
     try:
@@ -263,8 +290,6 @@ def close_sl_only_for_bot_products(product_ids):
     if not product_ids: product_ids = load_bot_products()
     return cancel_bot_sl_only(product_ids)
 
-_last_pnl_cache = {"total":0.0,"details":[]}
-
 def get_live_pnl_from_delta_strict_margin():
     total_usd = 0.0
     details = []
@@ -278,25 +303,22 @@ def get_live_pnl_from_delta_strict_margin():
                 size_contracts = float(pos.get('size', 0) or 0)
                 if size_contracts == 0:
                     continue
-                size_btc = abs(size_contracts) * 0.001  # 1 contract = 0.001 BTC - DELTA FORMULA
+                size_btc = abs(size_contracts) * 0.001
                 entry = float(pos.get('entry_price', 0) or 0)
                 prod_id = pos.get('product_id')
                 if not prod_id:
                     continue
-                # Get symbol and mark
                 try:
                     p_info = delta_request("GET", f"/products/{prod_id}", auth_required=False)
                     sym = p_info.get('result', {}).get('symbol', f'PID-{prod_id}')
                     t_info = delta_request("GET", f"/tickers/{sym}", auth_required=False)
                     mark = float(t_info['result'].get('mark_price', entry) or entry)
-                    if mark < 10:  # Delta sometimes gives 0.00x
+                    if mark < 10:
                         spot = get_btc_spot_live()
                         mark = mark * spot
                 except:
                     mark = entry
                     sym = f'PID-{prod_id}'
-                
-                # DELTA EXACT FORMULA
                 pnl = (entry - mark) * size_btc
                 total_usd += pnl
                 details.append(f"{sym}\n  Entry ${entry:.2f} -> Now ${mark:.2f}\n  {abs(size_contracts)} lots ({size_btc:.4f} BTC) => PNL ${pnl:.4f} USD")
@@ -395,15 +417,24 @@ async def timer_auto_job(context):
     except: pass
 
 async def qty_command(update, context):
-    global QTY
+    global QTY, AUTO_QTY_MODE
     if not context.args:
-        await update.message.reply_text(f"Current QTY: {QTY} lot(s) = {abs(get_lot_size_for_trade()):.4f} BTC\nUsage: /qty 1 or /qty 3"); return
+        mode_txt = "AUTO (Same Qty Both Side)" if AUTO_QTY_MODE else f"MANUAL {QTY}+{QTY}"
+        curr_qty = get_current_qty_per_side()
+        await update.message.reply_text(f"Current Mode: {mode_txt}\nLive QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Total\nBase: 50 Lots = {FUNDS_PER_50_LOTS}$ (Screenshot)\n\nUsage:\n/qty auto -> Auto Wallet Base\n/qty 25 -> Manual 25+25\n/qty 43 -> Manual 43+43"); return
+    arg = context.args[0].lower()
+    if arg == "auto":
+        AUTO_QTY_MODE=True; save_config()
+        curr_qty = get_current_qty_per_side()
+        bal = get_wallet_balance()
+        await update.message.reply_text(f"✅ AUTO MODE ON\nWallet: ${bal:.2f}\nBase: 50 Lots = ${FUNDS_PER_50_LOTS}\nAuto QTY: {curr_qty} Call + {curr_qty} Put = {curr_qty*2} Lots Total\nSame Qty Confirmed ✅")
+        return
     try:
         q=int(context.args[0])
         if q<1 or q>100: await update.message.reply_text("QTY 1 to 100 only"); return
-        QTY=q; save_config()
-        await update.message.reply_text(f"✅ QTY set to {QTY} lot(s)\nSize: {abs(get_lot_size_for_trade()):.4f} BTC\nIppo /scantrade pannunga")
-    except: await update.message.reply_text("Invalid QTY. Ex: /qty 2")
+        QTY=q; AUTO_QTY_MODE=False; save_config()
+        await update.message.reply_text(f"✅ MANUAL MODE\nQTY set to {QTY} Call + {QTY} Put = {QTY*2} Total\nSame Qty Both Side ✅\nSize: {abs(get_lot_size_for_trade()):.4f} BTC")
+    except: await update.message.reply_text("Invalid. Use /qty auto or /qty 25")
 
 async def setontime_command(update, context):
     if not context.args: await update.message.reply_text(f"ON: {TIMER_CONFIG['auto_on']}\nUsage: /setontime 21:30"); return
@@ -443,19 +474,23 @@ async def timer_command(update, context):
 
 async def timersettings_command(update, context):
     status="ENABLED" if is_trading_allowed() else "DISABLED"
-    txt=f"TIMER SETTINGS\nQTY: {QTY} lot(s) = {abs(get_lot_size_for_trade()):.4f} BTC\nAuto ON: {TIMER_CONFIG['auto_on']}\nAuto OFF: {TIMER_CONFIG['auto_off']}\nStatus: {status}\n\nManual QTY: /qty 1 | /qty 3 | /qty 10"
+    curr_qty = get_current_qty_per_side()
+    mode_txt = "AUTO" if AUTO_QTY_MODE else "MANUAL"
+    txt=f"TIMER SETTINGS\nMode: {mode_txt}\nQTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots = {abs(get_lot_size_for_trade()):.4f} BTC\nWallet: ${get_wallet_balance():.2f}\nAuto ON: {TIMER_CONFIG['auto_on']}\nAuto OFF: {TIMER_CONFIG['auto_off']}\nStatus: {status}\n\nUse: /qty auto | /qty 25"
     kb=[[InlineKeyboardButton("Timer ON", callback_data="TIMER_ON"), InlineKeyboardButton("Timer OFF", callback_data="TIMER_OFF"), InlineKeyboardButton("AUTO", callback_data="TIMER_AUTO")]]
     await update.message.reply_text(txt, reply_markup=InlineKeyboardMarkup(kb))
 
 async def start_command(update, context):
     spot=get_btc_spot_live(); status="ENABLED" if is_trading_allowed() else "DISABLED"
-    txt=f"V100 FINAL FIXED ✅\nBTC ${spot}\nQTY: {QTY} lot(s) | Timer: {status}\n/close = Bot Only SAFE | /cleanall = Bot+Manual FULL WIPE"
+    curr_qty = get_current_qty_per_side()
+    mode_txt = "AUTO Same Qty" if AUTO_QTY_MODE else f"MANUAL {QTY}+{QTY}"
+    txt=f"V100 AUTO+MANUAL Same Qty ✅\nBTC ${spot}\nMode: {mode_txt}\nQTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots | Timer: {status}\n/close = Bot Only SAFE | /cleanall = FULL WIPE"
     kb=[[InlineKeyboardButton("Scan Trade", callback_data="DO_SCAN")],[InlineKeyboardButton("LIVE PNL", callback_data="LIVE_PNL")],[InlineKeyboardButton("Timer Settings", callback_data="TIMER_SETTINGS")],[InlineKeyboardButton("CLOSE BOT ONLY", callback_data="CLOSE_ALL")]]
     await update.message.reply_text(txt, reply_markup=InlineKeyboardMarkup(kb))
 
 async def livepnl_command(update, context):
     total_usd, total_inr, details=get_live_pnl_from_delta_strict_margin(); spot=get_btc_spot_live()
-    header = f"💰 V100 LIVE PNL - Delta Total UPNL Exact\nBTC ${spot}\nTotal UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR\n"
+    header = f"💰 V100 LIVE PNL\nBTC ${spot}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()}\nTotal UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR\n"
     txt = header + "\n" + "\n\n".join(details) if details else f"LIVE PNL\nBTC ${spot}\nNo positions\nTotal UPNL: $0.00"
     await update.message.reply_text(txt)
 
@@ -477,7 +512,7 @@ async def cleanall_command(update, context):
 async def scantrade_command(update, context):
     global LAST_SCAN_HEADER, LAST_ATM_INFO, selection
     if not is_trading_allowed():
-        await update.message.reply_text(f"⏰ TIMER BLOCKED\nQTY: {QTY}\nUse /timer on"); return
+        await update.message.reply_text(f"⏰ TIMER BLOCKED\nQTY: {get_current_qty_per_side()}+{get_current_qty_per_side()}\nUse /timer on"); return
     spot,atm,cp,pp,calls,puts=get_atm_info_live(); pe,ce,_=get_positions_live()
     combined=cp+pp; ideal=int(combined*2); pe_target=atm-ideal; ce_target=atm+ideal
     avail=sorted(calls.keys())
@@ -485,36 +520,39 @@ async def scantrade_command(update, context):
     pe_ltp_sugg,_,_,_=get_ltp_live_strict(suggested_pe,"P",calls,puts,spot)
     ce_ltp_sugg,_,_,_=get_ltp_live_strict(suggested_ce,"C",calls,puts,spot)
     sel_txt=f"PE {pe[0]} | CE {ce[0]}" if pe and ce else "No position"
-    LAST_SCAN_HEADER=f"V100 SCAN | QTY:{QTY} lot(s)\nBTC ${spot} ATM {atm} CALL ${cp} PUT ${pp}\nCURRENT: {sel_txt}\nSUGGESTED (x2={ideal}):\nPE {suggested_pe} @ ${pe_ltp_sugg:.0f}\nCE {suggested_ce} @ ${ce_ltp_sugg:.0f}"
+    curr_qty = get_current_qty_per_side()
+    mode_txt = "AUTO" if AUTO_QTY_MODE else "MANUAL"
+    LAST_SCAN_HEADER=f"V100 SCAN | {mode_txt} QTY:{curr_qty}+{curr_qty}={curr_qty*2}\nBTC ${spot} ATM {atm} CALL ${cp} PUT ${pp}\nCURRENT: {sel_txt}\nSUGGESTED (x2={ideal}):\nPE {suggested_pe} @ ${pe_ltp_sugg:.0f}\nCE {suggested_ce} @ ${ce_ltp_sugg:.0f}"
     LAST_ATM_INFO={"spot":spot,"atm":atm,"cp":cp,"pp":pp,"combined":combined,"sug_pe":suggested_pe,"sug_ce":suggested_ce,"ideal":ideal}
     selection["pe"]=suggested_pe; selection["ce"]=suggested_ce; selection["mode"]="MOVE_BOTH"
-    text=f"{LAST_SCAN_HEADER}\n\nCurrent QTY: {QTY} lot(s) = {abs(get_lot_size_for_trade()):.4f} BTC\nQTY maathanumna /qty 3 nu type pannunga"
-    kb=[[InlineKeyboardButton(f"TRADE PE {suggested_pe} + CE {suggested_ce} (Both) QTY:{QTY}", callback_data="EXECUTE_BOTH")],[InlineKeyboardButton("Move CE Only", callback_data="MOVE_CE"),InlineKeyboardButton("Move PE Only", callback_data="MOVE_PE")],[InlineKeyboardButton("MANUAL TRADE BOTH", callback_data="MOVE_BOTH")],[InlineKeyboardButton("LIVE PNL", callback_data="LIVE_PNL")],[InlineKeyboardButton("CLOSE BOT ONLY", callback_data="CLOSE_ALL")],[InlineKeyboardButton("No Trade", callback_data="NO_TRADE")]]
+    text=f"{LAST_SCAN_HEADER}\n\nMode: {mode_txt} QTY: {curr_qty}+{curr_qty}\nMaathanumna /qty auto | /qty 25"
+    kb=[[InlineKeyboardButton(f"TRADE PE {suggested_pe} + CE {suggested_ce} (Both) QTY:{curr_qty}+{curr_qty}", callback_data="EXECUTE_BOTH")],[InlineKeyboardButton("Move CE Only", callback_data="MOVE_CE"),InlineKeyboardButton("Move PE Only", callback_data="MOVE_PE")],[InlineKeyboardButton("MANUAL TRADE BOTH", callback_data="MOVE_BOTH")],[InlineKeyboardButton("LIVE PNL", callback_data="LIVE_PNL")],[InlineKeyboardButton("CLOSE BOT ONLY", callback_data="CLOSE_ALL")],[InlineKeyboardButton("No Trade", callback_data="NO_TRADE")]]
     await update.effective_message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb))
 
 def build_keyboard_live(atm, combined, calls, puts, spot):
     mode=selection.get("mode","MOVE_BOTH"); ideal=int(combined*2); pe_c=atm-ideal; ce_c=atm+ideal; avail=sorted(calls.keys())
     pe_list=sorted(sorted(avail, key=lambda x: abs(x-pe_c))[:7]); ce_list=sorted(sorted(avail, key=lambda x: abs(x-ce_c))[:7]); kb=[]
+    curr_qty = get_current_qty_per_side()
     if mode=="MOVE_PE":
         for s in pe_list:
             ltp,_,_,_=get_ltp_live_strict(s,"P",calls,puts,spot)
             kb.append([InlineKeyboardButton(f"PE {s} @ ${ltp:.2f}"+(" YES" if selection["pe"]==s else ""), callback_data=f"SEL_PE_{s}")])
-        if selection["pe"] and selection["ce"]: kb.insert(0,[InlineKeyboardButton(f"CONFIRM BOTH PE {selection['pe']} + CE {selection['ce']} QTY:{QTY}",callback_data="CONFIRM_BOTH_PREVIEW")])
+        if selection["pe"] and selection["ce"]: kb.insert(0,[InlineKeyboardButton(f"CONFIRM BOTH PE {selection['pe']} + CE {selection['ce']} QTY:{curr_qty}+{curr_qty}",callback_data="CONFIRM_BOTH_PREVIEW")])
     elif mode=="MOVE_CE":
         for s in ce_list:
             ltp,_,_,_=get_ltp_live_strict(s,"C",calls,puts,spot)
             kb.append([InlineKeyboardButton(f"CE {s} @ ${ltp:.2f}"+(" YES" if selection["ce"]==s else ""), callback_data=f"SEL_CE_{s}")])
-        if selection["pe"] and selection["ce"]: kb.insert(0,[InlineKeyboardButton(f"CONFIRM BOTH PE {selection['pe']} + CE {selection['ce']} QTY:{QTY}",callback_data="CONFIRM_BOTH_PREVIEW")])
+        if selection["pe"] and selection["ce"]: kb.insert(0,[InlineKeyboardButton(f"CONFIRM BOTH PE {selection['pe']} + CE {selection['ce']} QTY:{curr_qty}+{curr_qty}",callback_data="CONFIRM_BOTH_PREVIEW")])
     else:
         for pe_s, ce_s in zip(pe_list, ce_list):
             pe_ltp,_,_,_=get_ltp_live_strict(pe_s,"P",calls,puts,spot); ce_ltp,_,_,_=get_ltp_live_strict(ce_s,"C",calls,puts,spot)
             kb.append([InlineKeyboardButton(f"PE {pe_s} ${pe_ltp:.2f}"+(" YES" if selection["pe"]==pe_s else ""), callback_data=f"SEL_PE_{pe_s}"),InlineKeyboardButton(f"CE {ce_s} ${ce_ltp:.2f}"+(" YES" if selection["ce"]==ce_s else ""), callback_data=f"SEL_CE_{ce_s}")])
-        if selection["pe"] and selection["ce"]: kb.insert(0,[InlineKeyboardButton(f"CONFIRM BOTH PE {selection['pe']} + CE {selection['ce']} QTY:{QTY}",callback_data="CONFIRM_BOTH_PREVIEW")])
+        if selection["pe"] and selection["ce"]: kb.insert(0,[InlineKeyboardButton(f"CONFIRM BOTH PE {selection['pe']} + CE {selection['ce']} QTY:{curr_qty}+{curr_qty}",callback_data="CONFIRM_BOTH_PREVIEW")])
     kb.append([InlineKeyboardButton("LIVE PNL Exact", callback_data="LIVE_PNL")]); kb.append([InlineKeyboardButton("CLOSE BOT ONLY", callback_data="CLOSE_ALL")]); kb.append([InlineKeyboardButton("Cancel",callback_data="CANCEL_BOTH")])
     return kb
 
 async def button_handler(update, context):
-    global SMART_ENABLED, COLLECTED_COMBINED, SMART_SL_COMBINED, LAST_SCAN_HEADER, LAST_ATM_INFO, selection, QTY
+    global SMART_ENABLED, COLLECTED_COMBINED, SMART_SL_COMBINED, LAST_SCAN_HEADER, LAST_ATM_INFO, selection, QTY, AUTO_QTY_MODE
     q=update.callback_query; await q.answer(); d=q.data
     if d in ["TIMER_ON","TIMER_OFF","TIMER_AUTO","TIMER_SETTINGS"]:
         if d=="TIMER_ON": TIMER_CONFIG["manual_override"]=True; TIMER_CONFIG["trading_active"]=True; save_config(); await q.message.reply_text("✅ Manual ON")
@@ -526,7 +564,7 @@ async def button_handler(update, context):
     if d=="CLOSE_ALL": await close_command(update, context); return
     if d=="LIVE_PNL":
         total_usd,total_inr,details=get_live_pnl_from_delta_strict_margin(); spot=get_btc_spot_live()
-        header = f"💰 V100 LIVE PNL - Delta Total UPNL Exact\nBTC ${spot}\nTotal UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR\n"
+        header = f"💰 V100 LIVE PNL\nBTC ${spot}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()}\nTotal UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR\n"
         txt = header + "\n" + "\n\n".join(details) if details else f"LIVE PNL\nBTC ${spot}\nNo valid positions\nTotal UPNL: $0.00"
         await q.message.reply_text(txt); return
     if d in ["NO_TRADE","CANCEL_BOTH"]: selection["pe"]=None; selection["ce"]=None; selection["mode"]=None; await q.edit_message_text(f"{LAST_SCAN_HEADER}\n\nCancelled"); return
@@ -541,26 +579,27 @@ async def button_handler(update, context):
         if d=="MOVE_BOTH": selection["pe"]=def_pe; selection["ce"]=def_ce
         elif d=="MOVE_PE": retained_ce=ce_exist[0] if ce_exist else def_ce; selection["pe"]=def_pe; selection["ce"]=retained_ce
         else: retained_pe=pe_exist[0] if pe_exist else def_pe; selection["pe"]=retained_pe; selection["ce"]=def_ce
-        selection["mode"]=d; header=f"{LAST_SCAN_HEADER}\n\n{d} ATM {atm} (x2={ideal}) QTY:{QTY}\nSTRICT BOTH: PE {selection['pe']} | CE {selection['ce']}"
+        selection["mode"]=d; curr_qty=get_current_qty_per_side(); header=f"{LAST_SCAN_HEADER}\n\n{d} ATM {atm} (x2={ideal}) QTY:{curr_qty}+{curr_qty}\nSTRICT BOTH: PE {selection['pe']} | CE {selection['ce']}"
         await q.edit_message_text(header, reply_markup=InlineKeyboardMarkup(build_keyboard_live(atm,cp+pp,calls,puts,spot))); return
     if d.startswith("SEL_PE_"):
         s=int(d.replace("SEL_PE_",""))
         if selection["ce"] is None: selection["ce"]=ce_exist[0] if ce_exist else LAST_ATM_INFO.get("sug_ce")
-        selection["pe"]=s; await q.edit_message_text(f"{LAST_SCAN_HEADER}\n\n{selection['mode']} PE {selection['pe']} | CE {selection['ce']} QTY:{QTY}", reply_markup=InlineKeyboardMarkup(build_keyboard_live(atm,cp+pp,calls,puts,spot))); return
+        selection["pe"]=s; curr_qty=get_current_qty_per_side(); await q.edit_message_text(f"{LAST_SCAN_HEADER}\n\n{selection['mode']} PE {selection['pe']} | CE {selection['ce']} QTY:{curr_qty}+{curr_qty}", reply_markup=InlineKeyboardMarkup(build_keyboard_live(atm,cp+pp,calls,puts,spot))); return
     if d.startswith("SEL_CE_"):
         s=int(d.replace("SEL_CE_",""))
         if selection["pe"] is None: selection["pe"]=pe_exist[0] if pe_exist else LAST_ATM_INFO.get("sug_pe")
-        selection["ce"]=s; await q.edit_message_text(f"{LAST_SCAN_HEADER}\n\n{selection['mode']} PE {selection['pe']} | CE {selection['ce']} QTY:{QTY}", reply_markup=InlineKeyboardMarkup(build_keyboard_live(atm,cp+pp,calls,puts,spot))); return
+        selection["ce"]=s; curr_qty=get_current_qty_per_side(); await q.edit_message_text(f"{LAST_SCAN_HEADER}\n\n{selection['mode']} PE {selection['pe']} | CE {selection['ce']} QTY:{curr_qty}+{curr_qty}", reply_markup=InlineKeyboardMarkup(build_keyboard_live(atm,cp+pp,calls,puts,spot))); return
     if d in ["CONFIRM_BOTH_PREVIEW"]:
         if not selection["pe"] or not selection["ce"]:
             if LAST_ATM_INFO.get("sug_pe") and LAST_ATM_INFO.get("sug_ce"): selection["pe"]=LAST_ATM_INFO["sug_pe"]; selection["ce"]=LAST_ATM_INFO["sug_ce"]
             else: await q.edit_message_text(f"STRICT ERROR: Both required!"); return
-        lines=[f"{LAST_SCAN_HEADER}\n\nFINAL STRICT BOTH QTY:{QTY}\n"]
+        curr_qty=get_current_qty_per_side()
+        lines=[f"{LAST_SCAN_HEADER}\n\nFINAL STRICT BOTH QTY:{curr_qty}+{curr_qty}\n"]
         if selection["pe"]:
             ltp,_,_,_=get_ltp_live_strict(selection["pe"],"P",calls,puts,spot); lines.append(f"PE {selection['pe']} @ ${ltp:.2f} -> SL ${ltp*SL_MULTIPLIER:.2f}")
         if selection["ce"]:
             ltp,_,_,_=get_ltp_live_strict(selection["ce"],"C",calls,puts,spot); lines.append(f"CE {selection['ce']} @ ${ltp:.2f} -> SL ${ltp*SL_MULTIPLIER:.2f}")
-        final_text="\n".join(lines); kb=[[InlineKeyboardButton(f"YES TRADE BOTH PE {selection['pe']} + CE {selection['ce']} QTY:{QTY}", callback_data="EXECUTE_BOTH")]]
+        final_text="\n".join(lines); kb=[[InlineKeyboardButton(f"YES TRADE BOTH PE {selection['pe']} + CE {selection['ce']} QTY:{curr_qty}+{curr_qty}", callback_data="EXECUTE_BOTH")]]
         kb.append([InlineKeyboardButton("Back", callback_data=selection["mode"]), InlineKeyboardButton("Cancel", callback_data="CANCEL_BOTH")])
         await q.edit_message_text(final_text, reply_markup=InlineKeyboardMarkup(kb)); return
     if d in ["EXECUTE_BOTH"]:
@@ -568,13 +607,16 @@ async def button_handler(update, context):
             if LAST_ATM_INFO.get("sug_pe") and LAST_ATM_INFO.get("sug_ce"):
                 selection["pe"]=LAST_ATM_INFO["sug_pe"]; selection["ce"]=LAST_ATM_INFO["sug_ce"]
             else: await q.edit_message_text(f"STRICT ERROR: Need BOTH"); return
-        txt=f"⚠️ QTY CONFIRMATION\n\nPE {selection['pe']} + CE {selection['ce']}\n\nCurrent QTY: {QTY} lot(s)\nSize: {abs(get_lot_size_for_trade()):.4f} BTC\n\nQTY mathanumna /qty 1, /qty 3 nu type pannunga\nReady na YES click pannunga"
-        kb=[[InlineKeyboardButton(f"✅ YES TRADE WITH QTY {QTY} ({abs(get_lot_size_for_trade()):.4f} BTC)", callback_data="FINAL_EXECUTE")],[InlineKeyboardButton("❌ Cancel", callback_data="CANCEL_BOTH")]]
+        curr_qty=get_current_qty_per_side()
+        mode_txt="AUTO" if AUTO_QTY_MODE else "MANUAL"
+        txt=f"⚠️ QTY CONFIRMATION ({mode_txt})\n\nPE {selection['pe']} + CE {selection['ce']}\n\nQTY: {curr_qty} Call + {curr_qty} Put = {curr_qty*2} Lots Total\nSize: {abs(get_lot_size_for_trade()):.4f} BTC\nSame Qty Both Side ✅\n\nMaathanumna /qty auto | /qty 25\nReady na YES click pannunga"
+        kb=[[InlineKeyboardButton(f"✅ YES TRADE {curr_qty}+{curr_qty} ({abs(get_lot_size_for_trade()):.4f} BTC)", callback_data="FINAL_EXECUTE")],[InlineKeyboardButton("❌ Cancel", callback_data="CANCEL_BOTH")]]
         await q.edit_message_text(txt, reply_markup=InlineKeyboardMarkup(kb)); return
     if d in ["FINAL_EXECUTE"]:
         if not selection["pe"] or not selection["ce"]: await q.edit_message_text(f"STRICT ERROR"); return
         if not is_trading_allowed(): await q.edit_message_text(f"TIMER BLOCKED"); return
         lot_size=get_lot_size_for_trade()
+        curr_qty=get_current_qty_per_side()
         try:
             pe_ltp,pe_pid,_,_=get_ltp_live_strict(selection["pe"],"P",calls,puts,spot)
             ce_ltp,ce_pid,_,_=get_ltp_live_strict(selection["ce"],"C",calls,puts,spot)
@@ -587,14 +629,15 @@ async def button_handler(update, context):
             place_sl_live(pe_pid, lot_size, pe_ltp); place_sl_live(ce_pid, lot_size, ce_ltp)
             global SMART_ENABLED, COLLECTED_COMBINED, SMART_SL_COMBINED
             COLLECTED_COMBINED=pe_ltp+ce_ltp; SMART_ENABLED=True; SMART_SL_COMBINED=0
-            await q.edit_message_text(f"BOTH SUCCESS V100 QTY:{QTY}\nPE {selection['pe']} @ ${pe_ltp:.2f}\nCE {selection['ce']} @ ${ce_ltp:.2f}\nSize {abs(lot_size):.4f} BTC\nCollected ${COLLECTED_COMBINED:.2f}\nFile: {load_bot_products()}")
+            await q.edit_message_text(f"BOTH SUCCESS V100 {curr_qty}+{curr_qty}\nPE {selection['pe']} @ ${pe_ltp:.2f}\nCE {selection['ce']} @ ${ce_ltp:.2f}\nSize {abs(lot_size):.4f} BTC = {curr_qty} Lots Per Side\nCollected ${COLLECTED_COMBINED:.2f}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} Same Qty ✅")
         except Exception as e: await q.edit_message_text(f"FAILED: {e}")
         selection["pe"]=None; selection["ce"]=None; selection["mode"]=None; return
 
 async def post_init(app):
     try:
         spot=get_btc_spot_live()
-        await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"V100 FINAL FIXED ✅\nBTC ${spot}\nQTY:{QTY} Fixed\n/close = Bot Only SAFE | /cleanall = Bot+Manual FULL WIPE\nReady!")
+        curr_qty=get_current_qty_per_side()
+        await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"V100 AUTO+MANUAL Same Qty ✅\nBTC ${spot}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'}\nQTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots\nBase: 50 Lots = {FUNDS_PER_50_LOTS}$\n/qty auto | /qty 25")
     except: pass
 
 def main():
@@ -618,7 +661,7 @@ def main():
     app.job_queue.run_repeating(smart_trail_job, interval=60, first=10, job_kwargs={'misfire_grace_time':60})
     app.job_queue.run_repeating(individual_sl_monitor_job, interval=60, first=12, job_kwargs={'misfire_grace_time':60})
     app.job_queue.run_repeating(timer_auto_job, interval=60, first=10, job_kwargs={'misfire_grace_time':60})
-    print(f"V100 FINAL FIXED - READY")
+    print(f"V100 AUTO+MANUAL Same Qty - READY")
     app.run_polling(drop_pending_updates=True)
 
 if __name__=="__main__": main()
