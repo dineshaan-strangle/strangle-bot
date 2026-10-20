@@ -281,8 +281,8 @@ def force_cancel_all_orders():
     except: pass
     return cancelled, closed
     def execute_auto_timer_trade():
-        try:
-                pe_exist, ce_exist, _ = get_positions_live()
+    try:
+        pe_exist, ce_exist, _ = get_positions_live()
         if pe_exist and ce_exist:
             return False
         spot, atm, cp, pp, calls, puts = get_atm_info_live()
