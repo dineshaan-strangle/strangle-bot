@@ -462,32 +462,36 @@ async def timer_auto_job(context):
                         SMART_ENABLED = False; COLLECTED_COMBINED = 0; SMART_SL_COMBINED = 0
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ AUTO CLOSE DONE\nClosed: {', '.join(closed) if closed else 'No bot positions'}")
                     except Exception as e:
-                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Auto close error: {e}")
-        if TIMER_CONFIG["custom_range"]:
+                                if TIMER_CONFIG["custom_range"]:
             try:
                 s, e = TIMER_CONFIG["custom_range"]
                 if now_str == s:
-                                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER ON {now_str} - Taking Trade...")
-                try:
-                    if execute_auto_timer_trade():
-                        try:
-                            bp = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5).json()
-                            btc_price = float(bp.get("price", 0))
-                        except:
-                            btc_price = 0
-                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ CUSTOM TIMER TRADE DONE\n\nBTC: ${btc_price}")
-                except Exception as ex:
-                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom trade error: {ex}")
-        if now_str == e:
+                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER ON {now_str} - Taking Trade...")
+                    try:
+                        if execute_auto_timer_trade():
+                            try:
+                                bp = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5).json()
+                                btc_price = float(bp.get("price", 0))
+                            except:
+                                btc_price = 0
+                            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ CUSTOM TIMER TRADE DONE\n\nBTC: ${btc_price}")
+                    except Exception as ex:
+                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom trade error: {ex}")
+                if now_str == e:
                     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER OFF {now_str} - Closing all bot positions...")
                     try:
                         closed, pids = close_bot_positions_only()
                         close_sl_only_for_bot_products(pids)
-                        SMART_ENABLED = False; COLLECTED_COMBINED = 0; SMART_SL_COMBINED = 0
+                        SMART_ENABLED = False
+                        COLLECTED_COMBINED = 0
+                        SMART_SL_COMBINED = 0
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ CUSTOM CLOSE DONE\nClosed: {', '.join(closed) if closed else 'No bot positions'}")
                         TIMER_CONFIG["custom_range"] = None
                         save_config()
                     except Exception as ex:
+                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom close error: {ex}")
+            except Exception as ex:
+                await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom timer check error: {ex}")
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom close error: {ex}")
             except: pass
     except Exception as ex:
