@@ -431,70 +431,55 @@ async def individual_sl_monitor_job(context):
     except: pass
 
 async def timer_auto_job(context):
-    global SMART_ENABLED, COLLECTED_COMBINED, SMART_SL_COMBINED
-    try:
-        if TIMER_CONFIG["manual_override"] is not None:
-            return
-        now_dt = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=5, minutes=30)
-        now_str = now_dt.strftime("%H:%M")
-        print(f"[{now_str} IST] TIMER CHECK Custom:{TIMER_CONFIG['custom_range']} Auto ON:{TIMER_CONFIG['auto_on']}")
-        if TIMER_CONFIG["auto_on"] and not TIMER_CONFIG["custom_range"]:
-            if now_str == TIMER_CONFIG.get("auto_on"):
-                if not TIMER_CONFIG.get("trading_active"):
-                    TIMER_CONFIG["trading_active"] = True
-                    save_config()
-                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"AUTO TIMER ON {now_str} - Trading ENABLED + Taking Trade...")
-                    try:
-                        if execute_auto_timer_trade():
-                            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ AUTO TIMER TRADE DONE - {now_str}")
-                    except Exception as e:
-                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Auto trade error: {e}")
-        if TIMER_CONFIG["auto_off"] and not TIMER_CONFIG["custom_range"]:
-            if now_str == TIMER_CONFIG.get("auto_off"):
-                if TIMER_CONFIG.get("trading_active") or is_trading_allowed():
-                    TIMER_CONFIG["trading_active"] = False
-                    save_config()
-                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"AUTO TIMER OFF {now_str} - Closing all bot positions...")
-                    try:
-                        closed, pids = close_bot_positions_only()
-                        close_sl_only_for_bot_products(pids)
-                        SMART_ENABLED = False
-                        COLLECTED_COMBINED = 0
-                        SMART_SL_COMBINED = 0
-                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ AUTO CLOSE DONE\nClosed: {', '.join(closed) if closed else 'No bot positions'}")
-                    except Exception as e:
-                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Auto close error: {e}")
-        if TIMER_CONFIG["custom_range"]:
-                     try:
-                s, e = TIMER_CONFIG["custom_range"]
-                if now_str == s:
-                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER ON {now_str} - Taking Trade...")
-                    try:
-                        if execute_auto_timer_trade():
-                            try:
-                                bp = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5).json()
-                                btc_price = float(bp.get("price", 0))
-                            except:
-                                btc_price = 0
-                            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ CUSTOM TIMER TRADE DONE\n\nBTC: ${btc_price}")
-                    except Exception as ex:
-                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom trade error: {ex}")
-                if now_str == e:
-                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER OFF {now_str} - Closing all bot positions...")
-                    try:
-                        closed, pids = close_bot_positions_only()
-                        close_sl_only_for_bot_products(pids)
-                        SMART_ENABLED = False
-                        COLLECTED_COMBINED = 0
-                        SMART_SL_COMBINED = 0
-                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ CUSTOM CLOSE DONE\nClosed: {', '.join(closed) if closed else 'No bot positions'}")
-                        TIMER_CONFIG["custom_range"] = None
-                        save_config()
-                    except Exception as ex:
-                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom close error: {ex}")
-            except Exception as ex:
-                await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom timer check error: {ex}")
-    except Exception as ex:
+ global SMART_ENABLED,COLLECTED_COMBINED,SMART_SL_COMBINED
+ try:
+  if TIMER_CONFIG["manual_override"] is not None: return
+  now_dt=datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(hours=5,minutes=30);now_str=now_dt.strftime("%H:%M")
+  print(f"[{now_str} IST] TIMER CHECK Custom:{TIMER_CONFIG['custom_range']} Auto ON:{TIMER_CONFIG['auto_on']}")
+  if TIMER_CONFIG["auto_on"] and not TIMER_CONFIG["custom_range"]:
+   if now_str==TIMER_CONFIG.get("auto_on"):
+    if not TIMER_CONFIG.get("trading_active"):
+     TIMER_CONFIG["trading_active"]=True;save_config()
+     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"AUTO TIMER ON {now_str} - Trading ENABLED + Taking Trade...")
+     try:
+      if execute_auto_timer_trade(): await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"✅ AUTO TIMER TRADE DONE - {now_str}")
+     except Exception as e: await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"Auto trade error: {e}")
+  if TIMER_CONFIG["auto_off"] and not TIMER_CONFIG["custom_range"]:
+   if now_str==TIMER_CONFIG.get("auto_off"):
+    if TIMER_CONFIG.get("trading_active") or is_trading_allowed():
+     TIMER_CONFIG["trading_active"]=False;save_config()
+     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"AUTO TIMER OFF {now_str} - Closing all bot positions...")
+     try:
+      closed,pids=close_bot_positions_only();close_sl_only_for_bot_products(pids);SMART_ENABLED=False;COLLECTED_COMBINED=0;SMART_SL_COMBINED=0
+      await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"✅ AUTO CLOSE DONE\nClosed: {', '.join(closed) if closed else 'No bot positions'}")
+     except Exception as e: await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"Auto close error: {e}")
+  if TIMER_CONFIG["custom_range"]:
+   try:
+    s,e=TIMER_CONFIG["custom_range"]
+    if now_str==s:
+     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"CUSTOM TIMER ON {now_str} - Taking Trade...")
+     try:
+      btc_price=0
+      try:
+       bp=requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT",timeout=5).json()
+       btc_price=float(bp.get("price",0))
+      except: btc_price=get_btc_spot_live()
+      if execute_auto_timer_trade():
+       await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"✅ CUSTOM TIMER TRADE DONE\nBTC: ${btc_price}\nPE+CE Sold")
+      else:
+       await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"Custom Timer: Already in Position\nBTC: ${btc_price}")
+     except Exception as ex:
+      await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"Custom trade error: {ex}")
+    if now_str==e:
+     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"CUSTOM TIMER OFF {now_str} - Closing...")
+     try:
+      closed,pids=close_bot_positions_only();close_sl_only_for_bot_products(pids);SMART_ENABLED=False;COLLECTED_COMBINED=0;SMART_SL_COMBINED=0
+      await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"✅ CUSTOM CLOSE DONE\nClosed: {', '.join(closed) if closed else 'No bot positions'}")
+      TIMER_CONFIG["custom_range"]=None;save_config()
+     except Exception as ex: await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"Custom close error: {ex}")
+   except Exception as ex:
+    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"Custom timer check error: {ex}")
+ except Exception as ex: print(f"timer_auto_job error: {ex}")
         print(f"timer_auto_job error: {ex}")
         async def qty_command(update, context):
     global QTY, AUTO_QTY_MODE
