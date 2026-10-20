@@ -467,18 +467,18 @@ async def timer_auto_job(context):
             try:
                 s, e = TIMER_CONFIG["custom_range"]
                 if now_str == s:
-                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER ON {now_str} - Taking Trade...")
-                    try:
-                if execute_auto_timer_trade():
+                                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER ON {now_str} - Taking Trade...")
+                try:
+                    if execute_auto_timer_trade():
                         try:
                             bp = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=5).json()
                             btc_price = float(bp.get("price", 0))
                         except:
                             btc_price = 0
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ CUSTOM TIMER TRADE DONE\n\nBTC: ${btc_price}")
-                    except Exception as ex:
-                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom trade error: {ex}")
-if now_str == e:
+                except Exception as ex:
+                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom trade error: {ex}")
+        if now_str == e:
                     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER OFF {now_str} - Closing all bot positions...")
                     try:
                         closed, pids = close_bot_positions_only()
