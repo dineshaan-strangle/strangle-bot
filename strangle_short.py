@@ -470,7 +470,7 @@ async def timer_auto_job(context):
                     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER ON {now_str} - Taking Trade...")
                     try:
                         if execute_auto_timer_trade():
-                            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ CUSTOM TIMER TRADE DONE - ATM Strangle")
+                            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ CUSTOM TIMER TRADE DONE\n\nBTC: ${btc_price}\nCE Strike: {ce_strike} ({ce_qty} Lots)\nPE Strike: {pe_strike} ({pe_qty} Lots)\nATM Strangle Taken at {now_str} IST")
                     except Exception as ex:
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom trade error: {ex}")
                 if now_str == e:
