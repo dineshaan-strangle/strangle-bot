@@ -7,7 +7,7 @@ from flask import Flask
 import threading
 app=Flask(__name__)
 @app.route('/')
-def home(): return "Bot Running V101 FIXED!"
+def home(): return "Bot Running V102 FIXED SCAN!"
 def run_web(): app.run(host='0.0.0.0',port=int(os.environ.get("PORT",10000)))
 threading.Thread(target=run_web,daemon=True).start()
 import time,hmac,hashlib,requests,json,datetime,os
@@ -94,8 +94,6 @@ def delta_request(method,endpoint,payload="",auth_required=True):
   if "orders" in endpoint and "not_found" in str(j['error']): return {"result":[]}
   raise Exception(f"{j['error']}")
  return j
-
-# === FIXED BTC PRICE ===
 def get_btc_spot_live():
  try:
   j=delta_request("GET","/tickers/BTCUSD",auth_required=False)
@@ -115,7 +113,6 @@ def get_btc_spot_live():
    return float(bp['price'])
  except: pass
  return 82450.0
-
 def get_t2_chain_live():
  prods=delta_request("GET","/products",auth_required=False)['result'];now_ts=time.time();calls={};puts={}
  for p in prods:
@@ -325,8 +322,6 @@ async def individual_sl_monitor_job(context):
   PREV_PE_STRIKE=curr_pe;PREV_CE_STRIKE=curr_ce
   if total_usd!=0: PREV_TOTAL_USD=total_usd
  except: pass
-
-# === FIXED TIMER JOB - NO $0.0 ===
 async def timer_auto_job(context):
  global SMART_ENABLED,COLLECTED_COMBINED,SMART_SL_COMBINED
  try:
@@ -369,74 +364,93 @@ async def timer_auto_job(context):
      except Exception as ex: await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"Custom close error: {ex}")
    except Exception as ex: await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"Custom timer check error: {ex}")
  except Exception as ex: print(f"timer_auto_job error: {ex}")
-
 async def qty_command(update,context):
  global QTY,AUTO_QTY_MODE
  if not context.args:
   mode_txt="AUTO (Same Qty Both Side)" if AUTO_QTY_MODE else f"MANUAL {QTY}+{QTY}";curr_qty=get_current_qty_per_side()
-  await update.message.reply_text(f"Current Mode: {mode_txt} Live QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Total Base: 50 Lots = {FUNDS_PER_50_LOTS}$ Usage: /qty auto /qty 25");return
+  await update.effective_message.reply_text(f"Current Mode: {mode_txt} Live QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Total Base: 50 Lots = {FUNDS_PER_50_LOTS}$ Usage: /qty auto /qty 25");return
  arg=context.args[0].lower()
- if arg=="auto": AUTO_QTY_MODE=True;save_config();curr_qty=get_current_qty_per_side();bal=get_wallet_balance();await update.message.reply_text(f"AUTO MODE ON Wallet: ${bal:.2f} Base: 50 Lots = ${FUNDS_PER_50_LOTS} Auto QTY: {curr_qty} Call + {curr_qty} Put = {curr_qty*2} Lots Total");return
+ if arg=="auto": AUTO_QTY_MODE=True;save_config();curr_qty=get_current_qty_per_side();bal=get_wallet_balance();await update.effective_message.reply_text(f"AUTO MODE ON Wallet: ${bal:.2f} Base: 50 Lots = ${FUNDS_PER_50_LOTS} Auto QTY: {curr_qty} Call + {curr_qty} Put = {curr_qty*2} Lots Total");return
  try:
   q=int(context.args[0])
-  if q<1 or q>100: await update.message.reply_text("QTY 1 to 100 only");return
-  QTY=q;AUTO_QTY_MODE=False;save_config();await update.message.reply_text(f"MANUAL MODE QTY set to {QTY} Call + {QTY} Put = {QTY*2} Total Size: {abs(get_lot_size_for_trade()):.4f} BTC")
- except: await update.message.reply_text("Invalid. Use /qty auto or /qty 25")
+  if q<1 or q>100: await update.effective_message.reply_text("QTY 1 to 100 only");return
+  QTY=q;AUTO_QTY_MODE=False;save_config();await update.effective_message.reply_text(f"MANUAL MODE QTY set to {QTY} Call + {QTY} Put = {QTY*2} Total Size: {abs(get_lot_size_for_trade()):.4f} BTC")
+ except: await update.effective_message.reply_text("Invalid. Use /qty auto or /qty 25")
 async def setontime_command(update,context):
- if not context.args: await update.message.reply_text(f"ON: {TIMER_CONFIG['auto_on']} Usage: /setontime 21:30");return
+ if not context.args: await update.effective_message.reply_text(f"ON: {TIMER_CONFIG['auto_on']} Usage: /setontime 21:30");return
  t=context.args[0]
- if not parse_time_str(t): await update.message.reply_text("Invalid time");return
- TIMER_CONFIG["auto_on"]=t;TIMER_CONFIG["manual_override"]=None;save_config();await update.message.reply_text(f"Auto ON set to {t}")
+ if not parse_time_str(t): await update.effective_message.reply_text("Invalid time");return
+ TIMER_CONFIG["auto_on"]=t;TIMER_CONFIG["manual_override"]=None;save_config();await update.effective_message.reply_text(f"Auto ON set to {t}")
 async def setofftime_command(update,context):
- if not context.args: await update.message.reply_text(f"OFF: {TIMER_CONFIG['auto_off']} Usage: /setofftime 15:15");return
+ if not context.args: await update.effective_message.reply_text(f"OFF: {TIMER_CONFIG['auto_off']} Usage: /setofftime 15:15");return
  t=context.args[0]
- if not parse_time_str(t): await update.message.reply_text("Invalid time");return
- TIMER_CONFIG["auto_off"]=t;TIMER_CONFIG["manual_override"]=None;save_config();await update.message.reply_text(f"Auto OFF set to {t}")
+ if not parse_time_str(t): await update.effective_message.reply_text("Invalid time");return
+ TIMER_CONFIG["auto_off"]=t;TIMER_CONFIG["manual_override"]=None;save_config();await update.effective_message.reply_text(f"Auto OFF set to {t}")
 async def timer_command(update,context):
- if not context.args: await update.message.reply_text("Usage: /timer on /timer off /timer 21:30-23:00 /timer auto");return
+ if not context.args: 
+  await update.effective_message.reply_text("Usage: /timer on /timer off /timer 21:30-23:00 /timer auto Example: /timer 01:19-01:25");return
  arg=context.args[0].lower()
- if arg=="on": TIMER_CONFIG["manual_override"]=True;TIMER_CONFIG["trading_active"]=True;save_config();await update.message.reply_text("TIMER Manual ON")
- elif arg=="off": TIMER_CONFIG["manual_override"]=False;TIMER_CONFIG["trading_active"]=False;save_config();await update.message.reply_text("TIMER Manual OFF")
- elif arg=="auto": TIMER_CONFIG["manual_override"]=None;TIMER_CONFIG["custom_range"]=None;save_config();await update.message.reply_text(f"AUTO ON:{TIMER_CONFIG['auto_on']} OFF:{TIMER_CONFIG['auto_off']}")
+ if arg=="on": TIMER_CONFIG["manual_override"]=True;TIMER_CONFIG["trading_active"]=True;save_config();await update.effective_message.reply_text("TIMER Manual ON - Trading ENABLED. Use /scantrade now")
+ elif arg=="off": TIMER_CONFIG["manual_override"]=False;TIMER_CONFIG["trading_active"]=False;save_config();await update.effective_message.reply_text("TIMER Manual OFF - Trading DISABLED")
+ elif arg=="auto": TIMER_CONFIG["manual_override"]=None;TIMER_CONFIG["custom_range"]=None;save_config();await update.effective_message.reply_text(f"AUTO ON:{TIMER_CONFIG['auto_on']} OFF:{TIMER_CONFIG['auto_off']}")
  elif "-" in arg:
   try:
    s,e=arg.split('-')
    if not parse_time_str(s) or not parse_time_str(e): raise ValueError
-   TIMER_CONFIG["custom_range"]=[s,e];TIMER_CONFIG["manual_override"]=None;save_config();await update.message.reply_text(f"Custom Timer {s} to {e} - Auto Trade + Auto Close")
-  except: await update.message.reply_text("Invalid range. Ex: /timer 21:30-23:00")
- else: await update.message.reply_text("Invalid. Use /timer on / off / auto")
+   TIMER_CONFIG["custom_range"]=[s,e];TIMER_CONFIG["manual_override"]=None;save_config();await update.effective_message.reply_text(f"Custom Timer {s} to {e} - Auto Trade + Auto Close ENABLED")
+  except: await update.effective_message.reply_text("Invalid range. Ex: /timer 21:30-23:00  OR  /timer 01:19-01:25")
+ else:
+  if parse_time_str(arg):
+   try:
+    st=parse_time_str(arg);et_time=datetime.datetime.combine(datetime.date.today(), st) + datetime.timedelta(minutes=6);e_str=et_time.strftime("%H:%M")
+    TIMER_CONFIG["custom_range"]=[arg, e_str];TIMER_CONFIG["manual_override"]=None;save_config();await update.effective_message.reply_text(f"Custom Timer {arg} to {e_str} (6 min auto) - Auto Trade + Auto Close")
+    return
+   except: pass
+  await update.effective_message.reply_text("Invalid. Use /timer on / off / auto / 21:30-23:00")
 async def timersettings_command(update,context):
  status="ENABLED" if is_trading_allowed() else "DISABLED";curr_qty=get_current_qty_per_side();mode_txt="AUTO" if AUTO_QTY_MODE else "MANUAL"
  txt=f"TIMER SETTINGS Mode: {mode_txt} QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots = {abs(get_lot_size_for_trade()):.4f} BTC Wallet: ${get_wallet_balance():.2f} Auto ON: {TIMER_CONFIG['auto_on']} Auto OFF: {TIMER_CONFIG['auto_off']} Status: {status}"
  kb=[[InlineKeyboardButton("Timer ON",callback_data="TIMER_ON"),InlineKeyboardButton("Timer OFF",callback_data="TIMER_OFF"),InlineKeyboardButton("AUTO",callback_data="TIMER_AUTO")]]
- await update.message.reply_text(txt,reply_markup=InlineKeyboardMarkup(kb))
+ await update.effective_message.reply_text(txt,reply_markup=InlineKeyboardMarkup(kb))
 async def start_command(update,context):
  spot=get_btc_spot_live();status="ENABLED" if is_trading_allowed() else "DISABLED";curr_qty=get_current_qty_per_side();mode_txt="AUTO Same Qty" if AUTO_QTY_MODE else f"MANUAL {QTY}+{QTY}"
- txt=f"V101 AUTO TRADE TIMER FIXED BTC ${spot:.0f} Mode: {mode_txt} QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots | Timer: {status} /close = Bot Only SAFE | /cleanall = FULL WIPE"
+ txt=f"V102 FIXED SCAN BTC ${spot:.0f} Mode: {mode_txt} QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots | Timer: {status} /close = Bot Only SAFE | /cleanall = FULL WIPE - SCAN BUG FIXED!"
  kb=[[InlineKeyboardButton("Scan Trade",callback_data="DO_SCAN")],[InlineKeyboardButton("LIVE PNL",callback_data="LIVE_PNL")],[InlineKeyboardButton("Timer Settings",callback_data="TIMER_SETTINGS")],[InlineKeyboardButton("CLOSE BOT ONLY",callback_data="CLOSE_ALL")]]
- await update.message.reply_text(txt,reply_markup=InlineKeyboardMarkup(kb))
+ await update.effective_message.reply_text(txt,reply_markup=InlineKeyboardMarkup(kb))
 async def livepnl_command(update,context):
  total_usd,total_inr,details=get_live_pnl_from_delta_strict_margin();spot=get_btc_spot_live()
- header=f"V101 LIVE PNL BTC ${spot:.0f} Mode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()} Total UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR "
+ header=f"V102 LIVE PNL BTC ${spot:.0f} Mode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()} Total UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR "
  txt=header+" ".join(details) if details else f"LIVE PNL BTC ${spot:.0f} No positions Total UPNL: $0.00"
- await update.message.reply_text(txt)
+ await update.effective_message.reply_text(txt)
 async def close_command(update,context):
  global SMART_ENABLED,COLLECTED_COMBINED,SMART_SL_COMBINED
- await update.message.reply_text("V101 CLOSE... BOT ONLY...");full_bot_pids=load_bot_products();closed,pids=close_bot_positions_only();closed_sl=cancel_bot_sl_only(full_bot_pids if full_bot_pids else pids);SMART_ENABLED=False;COLLECTED_COMBINED=0;SMART_SL_COMBINED=0
- await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"V101 CLOSED - Manual SAFE Bot Trade: {', '.join(closed) if closed else 'No bot pos'} Bot SL: {len(closed_sl)} cancelled File: {load_bot_products()}")
+ await update.effective_message.reply_text("V102 CLOSE... BOT ONLY...");full_bot_pids=load_bot_products();closed,pids=close_bot_positions_only();closed_sl=cancel_bot_sl_only(full_bot_pids if full_bot_pids else pids);SMART_ENABLED=False;COLLECTED_COMBINED=0;SMART_SL_COMBINED=0
+ await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"V102 CLOSED - Manual SAFE Bot Trade: {', '.join(closed) if closed else 'No bot pos'} Bot SL: {len(closed_sl)} cancelled File: {load_bot_products()}")
 async def cleanall_command(update,context):
- await update.message.reply_text("FORCE CLEAN ALL...");cancelled,closed=force_cancel_all_orders();save_bot_products([])
+ await update.effective_message.reply_text("FORCE CLEAN ALL...");cancelled,closed=force_cancel_all_orders();save_bot_products([])
  await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"FORCE CLEAN DONE Closed: {', '.join(closed) if closed else 'None'} Orders: {cancelled} File cleared []")
+
 async def scantrade_command(update,context):
  global LAST_SCAN_HEADER,LAST_ATM_INFO,selection
- if not is_trading_allowed(): await update.message.reply_text(f"TIMER BLOCKED QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()} Use /timer on");return
+ if not is_trading_allowed():
+  msg_text=f"TIMER BLOCKED QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()} Use /timer on"
+  try:
+   if update.effective_message:
+    await update.effective_message.reply_text(msg_text)
+   else:
+    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg_text)
+  except:
+   try: await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg_text)
+   except: pass
+  return
  spot,atm,cp,pp,calls,puts=get_atm_info_live();pe,ce,_=get_positions_live();combined=cp+pp;ideal=int(combined*2);pe_target=atm-ideal;ce_target=atm+ideal;avail=sorted(calls.keys());suggested_pe=min(avail,key=lambda x: abs(x-pe_target));suggested_ce=min(avail,key=lambda x: abs(x-ce_target));pe_ltp_sugg,_,_,_=get_ltp_live_strict(suggested_pe,"P",calls,puts,spot);ce_ltp_sugg,_,_,_=get_ltp_live_strict(suggested_ce,"C",calls,puts,spot);sel_txt=f"PE {pe[0]} | CE {ce[0]}" if pe and ce else "No position";curr_qty=get_current_qty_per_side();mode_txt="AUTO" if AUTO_QTY_MODE else "MANUAL"
- LAST_SCAN_HEADER=f"V101 SCAN | {mode_txt} QTY:{curr_qty}+{curr_qty}={curr_qty*2} BTC ${spot:.0f} ATM {atm} CALL ${cp} PUT ${pp} CURRENT: {sel_txt} SUGGESTED (x2={ideal}): PE {suggested_pe} @ ${pe_ltp_sugg:.0f} CE {suggested_ce} @ ${ce_ltp_sugg:.0f}"
+ LAST_SCAN_HEADER=f"V102 SCAN | {mode_txt} QTY:{curr_qty}+{curr_qty}={curr_qty*2} BTC ${spot:.0f} ATM {atm} CALL ${cp} PUT ${pp} CURRENT: {sel_txt} SUGGESTED (x2={ideal}): PE {suggested_pe} @ ${pe_ltp_sugg:.0f} CE {suggested_ce} @ ${ce_ltp_sugg:.0f}"
  LAST_ATM_INFO={"spot":spot,"atm":atm,"cp":cp,"pp":pp,"combined":combined,"sug_pe":suggested_pe,"sug_ce":suggested_ce,"ideal":ideal}
  selection["pe"]=suggested_pe;selection["ce"]=suggested_ce;selection["mode"]="MOVE_BOTH"
  text=f"{LAST_SCAN_HEADER} Mode: {mode_txt} QTY: {curr_qty}+{curr_qty} Maathanumna /qty auto | /qty 25"
  kb=[[InlineKeyboardButton(f"TRADE PE {suggested_pe} + CE {suggested_ce} (Both) QTY:{curr_qty}+{curr_qty}",callback_data="EXECUTE_BOTH")],[InlineKeyboardButton("Move CE Only",callback_data="MOVE_CE"),InlineKeyboardButton("Move PE Only",callback_data="MOVE_PE")],[InlineKeyboardButton("MANUAL TRADE BOTH",callback_data="MOVE_BOTH")],[InlineKeyboardButton("LIVE PNL",callback_data="LIVE_PNL")],[InlineKeyboardButton("CLOSE BOT ONLY",callback_data="CLOSE_ALL")],[InlineKeyboardButton("No Trade",callback_data="NO_TRADE")]]
  await update.effective_message.reply_text(text,reply_markup=InlineKeyboardMarkup(kb))
+
 def build_keyboard_live(atm,combined,calls,puts,spot):
  mode=selection.get("mode","MOVE_BOTH");ideal=int(combined*2);pe_c=atm-ideal;ce_c=atm+ideal;avail=sorted(calls.keys());pe_list=sorted(sorted(avail,key=lambda x: abs(x-pe_c))[:7]);ce_list=sorted(sorted(avail,key=lambda x: abs(x-ce_c))[:7]);kb=[];curr_qty=get_current_qty_per_side()
  if mode=="MOVE_PE":
@@ -457,9 +471,9 @@ async def button_handler(update,context):
  global SMART_ENABLED,COLLECTED_COMBINED,SMART_SL_COMBINED,LAST_SCAN_HEADER,LAST_ATM_INFO,selection,QTY,AUTO_QTY_MODE
  q=update.callback_query;await q.answer();d=q.data
  if d in ["TIMER_ON","TIMER_OFF","TIMER_AUTO","TIMER_SETTINGS"]:
-  if d=="TIMER_ON": TIMER_CONFIG["manual_override"]=True;TIMER_CONFIG["trading_active"]=True;save_config();await q.message.reply_text("Manual ON")
+  if d=="TIMER_ON": TIMER_CONFIG["manual_override"]=True;TIMER_CONFIG["trading_active"]=True;save_config();await q.message.reply_text("Manual ON - /scantrade work aagum")
   elif d=="TIMER_OFF": TIMER_CONFIG["manual_override"]=False;TIMER_CONFIG["trading_active"]=False;save_config();await q.message.reply_text("Manual OFF")
-  elif d=="TIMER_AUTO": TIMER_CONFIG["manual_override"]=None;TIMER_CONFIG["custom_range"]=None;save_config();await q.message.reply_text("AUTO Mode")
+  elif d=="TIMER_AUTO": TIMER_CONFIG["manual_override"]=None;TIMER_CONFIG["custom_range"]=None;save_config();await q.message.reply_text("AUTO Mode ON")
   else:
    curr_qty=get_current_qty_per_side();mode_txt="AUTO" if AUTO_QTY_MODE else "MANUAL";status="ENABLED" if is_trading_allowed() else "DISABLED"
    txt=f"TIMER SETTINGS Mode: {mode_txt} QTY: {curr_qty} ({curr_qty*2} Lots) AUTO ON: {TIMER_CONFIG['auto_on']} AUTO OFF: {TIMER_CONFIG['auto_off']} Status: {status}"
@@ -514,7 +528,7 @@ async def button_handler(update,context):
   await q.edit_message_text(txt,reply_markup=InlineKeyboardMarkup(kb));return
  if d in ["FINAL_EXECUTE"]:
   if not selection["pe"] or not selection["ce"]: await q.edit_message_text(f"STRICT ERROR");return
-  if not is_trading_allowed(): await q.edit_message_text(f"TIMER BLOCKED");return
+  if not is_trading_allowed(): await q.edit_message_text(f"TIMER BLOCKED - Use /timer on");return
   lot_size=get_lot_size_for_trade();curr_qty=get_current_qty_per_side()
   try:
    pe_ltp,pe_pid,_,_=get_ltp_live_strict(selection["pe"],"P",calls,puts,spot);ce_ltp,ce_pid,_,_=get_ltp_live_strict(selection["ce"],"C",calls,puts,spot)
@@ -522,13 +536,13 @@ async def button_handler(update,context):
    place_order_live_with_retry(pe_pid,lot_size,"sell");time.sleep(0.6);add_bot_product(pe_pid);place_order_live_with_retry(ce_pid,lot_size,"sell");time.sleep(0.5);add_bot_product(ce_pid)
    place_sl_live(pe_pid,lot_size,pe_ltp);place_sl_live(ce_pid,lot_size,ce_ltp)
    global SMART_ENABLED,COLLECTED_COMBINED,SMART_SL_COMBINED;COLLECTED_COMBINED=pe_ltp+ce_ltp;SMART_ENABLED=True;SMART_SL_COMBINED=0
-   await q.edit_message_text(f"BOTH SUCCESS V101 {curr_qty}+{curr_qty} PE {selection['pe']} @ ${pe_ltp:.2f} CE {selection['ce']} @ ${ce_ltp:.2f} Size {abs(lot_size):.4f} BTC = {curr_qty} Lots Per Side Collected ${COLLECTED_COMBINED:.2f} Mode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} Same Qty")
+   await q.edit_message_text(f"BOTH SUCCESS V102 {curr_qty}+{curr_qty} PE {selection['pe']} @ ${pe_ltp:.2f} CE {selection['ce']} @ ${ce_ltp:.2f} Size {abs(lot_size):.4f} BTC = {curr_qty} Lots Per Side Collected ${COLLECTED_COMBINED:.2f} Mode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} Same Qty")
   except Exception as e: await q.edit_message_text(f"FAILED: {e}")
   selection["pe"]=None;selection["ce"]=None;selection["mode"]=None;return
 async def post_init(app):
  try:
   spot=get_btc_spot_live();curr_qty=get_current_qty_per_side()
-  await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"V101 AUTO TRADE TIMER FIXED BTC ${spot:.0f} Mode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots Base: 50 Lots = {FUNDS_PER_50_LOTS}$ /qty auto | /qty 25 Timer: ON=Trade OFF=Close - BTC BUG FIXED!")
+  await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"V102 FIXED SCAN BUG BTC ${spot:.0f} Mode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots - /scantrade + Button Both Working! Timer Bug Fixed!")
  except: pass
 def main():
  req=HTTPXRequest(connect_timeout=60.0,read_timeout=60.0,write_timeout=60.0,pool_timeout=60.0)
@@ -538,6 +552,6 @@ def main():
  app.job_queue.run_repeating(smart_trail_job,interval=60,first=10,job_kwargs={'misfire_grace_time':60})
  app.job_queue.run_repeating(individual_sl_monitor_job,interval=60,first=12,job_kwargs={'misfire_grace_time':60})
  app.job_queue.run_repeating(timer_auto_job,interval=60,first=10,job_kwargs={'misfire_grace_time':60})
- print(f"V101 AUTO TRADE TIMER FIXED - READY")
+ print(f"V102 FIXED SCAN BUG - READY")
  app.run_polling(drop_pending_updates=True)
 if __name__=="__main__": main()
