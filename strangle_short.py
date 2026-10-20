@@ -281,8 +281,8 @@ def force_cancel_all_orders():
     except: pass
     return cancelled, closed
     def execute_auto_timer_trade():
-    try:
-        pe_exist, ce_exist, _ = get_positions_live()
+        try:
+                pe_exist, ce_exist, _ = get_positions_live()
         if pe_exist and ce_exist:
             return False
         spot, atm, cp, pp, calls, puts = get_atm_info_live()
@@ -465,7 +465,7 @@ async def timer_auto_job(context):
                     except Exception as e:
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Auto close error: {e}")
         if TIMER_CONFIG["custom_range"]:
-            try:
+                     try:
                 s, e = TIMER_CONFIG["custom_range"]
                 if now_str == s:
                     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER ON {now_str} - Taking Trade...")
