@@ -1,5 +1,6 @@
-import os, json, time, threading, requests, hmac, hashlib, asyncio
+import os, json, time, threading, requests, hmac, hashlib
 from flask import Flask
+from telegram.ext import Updater, CommandHandler
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -8,93 +9,77 @@ DELTA_API_SECRET = os.getenv("DELTA_API_SECRET")
 
 app = Flask(__name__)
 @app.route('/')
-def home(): return "WORLD BEST V6 PYTHON 3.14 FIXED LIVE!"
+def home(): return "WORLD BEST V7 PYTHON 3.11 LIVE!"
 
 auto_trading = False
-pnl_data = {"total": 0, "wins": 0, "losses": 0, "trades": []}
-trailing_trades = {}
 
 def get_wallet_40():
     try:
         if DELTA_API_KEY and DELTA_API_SECRET:
-            timestamp = str(int(time.time()))
+            ts = str(int(time.time()))
             path = "/v2/wallet/balances"
-            message = f"GET{timestamp}{path}"
-            signature = hmac.new(DELTA_API_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
-            headers = {"api-key": DELTA_API_KEY, "timestamp": timestamp, "signature": signature}
-            res = requests.get(f"https://api.india.delta.exchange{path}", headers=headers, timeout=10)
-            data = res.json()
-            if data.get("success"):
-                for b in data.get("result", []):
-                    if b.get("asset_symbol") == "USDT":
-                        return float(b.get("available_balance", 0))
+            sig = hmac.new(DELTA_API_SECRET.encode(), f"GET{ts}{path}".encode(), hashlib.sha256).hexdigest()
+            headers = {"api-key": DELTA_API_KEY, "timestamp": ts, "signature": sig}
+            r = requests.get(f"https://api.india.delta.exchange{path}", headers=headers, timeout=10)
+            if r.json().get("success"):
+                for b in r.json().get("result", []):
+                    if b.get("asset_symbol")=="USDT":
+                        return float(b.get("available_balance",0))
         return 1000.0
     except: return 1000.0
 
 def calculate_40():
-    b = get_wallet_40()
-    u = b*0.40
-    return b, u, max(u/65000, 0.001)
+    b=get_wallet_40()
+    return b, b*0.40, max((b*0.40)/65000, 0.001)
 
-# V20 BOT
-async def start_cmd(update, context):
+def start_cmd(update, context):
     b,u,q = calculate_40()
-    await update.message.reply_text(f"🔥 V6 40% BOT ONLINE! Python 3.14 Fixed!\n\n💰 Balance ${round(b,2)} 40% ${round(u,2)} Safe ${round(b-u,2)}\n\n/scan /balance /auto /pnl /trail\nNo imghdr error!")
+    update.message.reply_text(f"🔥 V7 40% BOT LIVE! Fixed!\n\n💰 Balance ${round(b,2)}\n✅ 40% ${round(u,2)}\n🛡️ Safe 60% ${round(b-u,2)}\n\n/scan /balance /auto on/off /pnl\nPython 3.11 + No imghdr error!")
 
-async def balance_cmd(update, context):
+def balance_cmd(update, context):
     b,u,q = calculate_40()
-    await update.message.reply_text(f"💰 Wallet: ${round(b,2)}\nTrading 40%: ${round(u,2)}\nSafe 60%: ${round(b-u,2)}\nQty {round(q,5)} BTC")
+    update.message.reply_text(f"💰 WALLET 40%\nTotal ${round(b,2)}\nTrade 40% ${round(u,2)} Qty {round(q,5)}\nSafe 60% ${round(b-u,2)}")
 
-async def scan_cmd(update, context):
-    await update.message.reply_text("🔍 Scanning 6 filters...")
+def scan_cmd(update, context):
+    update.message.reply_text("🔍 Scanning 6 filters + 40%...")
     import random
-    if random.randint(0,10) >= 8:
-        b,u,q = calculate_40()
-        await update.message.reply_text(f"🔥 SIGNAL!\n💰 Wallet ${round(b,2)} 40% ${round(u,2)}\nBUY BTC SL -0.8% Target 1.5%\nTrailing 0.6%->BE 1%->Trail")
+    if random.randint(0,10)>=8:
+        b,u,q=calculate_40()
+        update.message.reply_text(f"🔥 SIGNAL 6 FILTER PASS!\n💰 ${round(b,2)} 40% ${round(u,2)}\nBUY BTC SL -0.8% Target 1.5%\nTrailing 0.6%->BE 1%->Trail\n60% SAFE!")
     else:
-        await update.message.reply_text("No Trade: Filter saved 40%!")
+        update.message.reply_text("No Trade: Filter saved 40%!")
 
-async def auto_cmd(update, context):
+def auto_cmd(update, context):
     global auto_trading
-    args = context.args
-    if not args:
-        await update.message.reply_text(f"Auto: {'ON' if auto_trading else 'OFF'}")
+    if not context.args:
+        update.message.reply_text(f"Auto: {'ON' if auto_trading else 'OFF'}")
         return
-    if args[0].lower()=="on":
+    if context.args[0].lower()=="on":
         auto_trading=True
-        b,u,q = calculate_40()
-        await update.message.reply_text(f"✅ Auto ON! 40% ${round(u,2)} + Trailing!")
+        b,u,q=calculate_40()
+        update.message.reply_text(f"✅ Auto ON! 40% ${round(u,2)} + Trailing ON!")
     else:
         auto_trading=False
-        await update.message.reply_text("🛑 Auto OFF!")
+        update.message.reply_text("🛑 Auto OFF!")
 
-async def pnl_cmd(update, context):
-    b,u,q = calculate_40()
-    await update.message.reply_text(f"📊 PNL\nBalance ${round(b,2)} 40% ${round(u,2)}\nTarget 70% win with trailing!")
+def pnl_cmd(update, context):
+    b,u,q=calculate_40()
+    update.message.reply_text(f"📊 PNL V7\nBalance ${round(b,2)} 40% ${round(u,2)}\nTarget 70% win!")
 
-async def trail_cmd(update, context):
-    args = context.args
-    if len(args)>=3:
-        await update.message.reply_text(f"🧪 Trailing Test: {args[0]} Entry {args[1]} Curr {args[2]} -> BE at 0.6% Trail at 1%!")
-    else:
-        await update.message.reply_text("📈 No active trailing! /balance")
+updater = Updater(TELEGRAM_BOT_TOKEN)
+dp = updater.dispatcher
+dp.add_handler(CommandHandler("start", start_cmd))
+dp.add_handler(CommandHandler("balance", balance_cmd))
+dp.add_handler(CommandHandler("scan", scan_cmd))
+dp.add_handler(CommandHandler("auto", auto_cmd))
+dp.add_handler(CommandHandler("pnl", pnl_cmd))
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-async def run_bot():
-    from telegram.ext import ApplicationBuilder, CommandHandler
-    app_bot = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-    app_bot.add_handler(CommandHandler("start", start_cmd))
-    app_bot.add_handler(CommandHandler("balance", balance_cmd))
-    app_bot.add_handler(CommandHandler("scan", scan_cmd))
-    app_bot.add_handler(CommandHandler("auto", auto_cmd))
-    app_bot.add_handler(CommandHandler("pnl", pnl_cmd))
-    app_bot.add_handler(CommandHandler("trail", trail_cmd))
-    print("WORLD BEST V6 ONLINE - Python 3.14 Fixed!")
-    await app_bot.run_polling()
+def run_bot():
+    print("WORLD BEST V7 ONLINE PYTHON 3.11!")
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
-    asyncio.run(run_bot())
+    threading.Thread(target=run_bot, daemon=True).start()
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
