@@ -280,8 +280,7 @@ def force_cancel_all_orders():
         cancelled.append("ALL")
     except: pass
     return cancelled, closed
-
-def execute_auto_timer_trade():
+    def execute_auto_timer_trade():
     try:
         pe_exist, ce_exist, _ = get_positions_live()
         if pe_exist and ce_exist:
@@ -459,10 +458,13 @@ async def timer_auto_job(context):
                     try:
                         closed, pids = close_bot_positions_only()
                         close_sl_only_for_bot_products(pids)
-                        SMART_ENABLED = False; COLLECTED_COMBINED = 0; SMART_SL_COMBINED = 0
+                        SMART_ENABLED = False
+                        COLLECTED_COMBINED = 0
+                        SMART_SL_COMBINED = 0
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ AUTO CLOSE DONE\nClosed: {', '.join(closed) if closed else 'No bot positions'}")
                     except Exception as e:
-                                if TIMER_CONFIG["custom_range"]:
+                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Auto close error: {e}")
+        if TIMER_CONFIG["custom_range"]:
             try:
                 s, e = TIMER_CONFIG["custom_range"]
                 if now_str == s:
@@ -492,11 +494,9 @@ async def timer_auto_job(context):
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom close error: {ex}")
             except Exception as ex:
                 await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom timer check error: {ex}")
-                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom close error: {ex}")
-            except: pass
     except Exception as ex:
-        pass
-async def qty_command(update, context):
+        print(f"timer_auto_job error: {ex}")
+        async def qty_command(update, context):
     global QTY, AUTO_QTY_MODE
     if not context.args:
         mode_txt = "AUTO (Same Qty Both Side)" if AUTO_QTY_MODE else f"MANUAL {QTY}+{QTY}"
