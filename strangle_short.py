@@ -249,7 +249,7 @@ def cancel_bot_sl_only(bot_pids):
                 cancelled.append(str(pid))
             except: pass
     return cancelled
-    def force_cancel_all_orders():
+def force_cancel_all_orders():
     cancelled=[]; closed=[]
     try:
         j = delta_request("GET", "/positions?underlying_asset_symbol=BTC", auth_required=True)
