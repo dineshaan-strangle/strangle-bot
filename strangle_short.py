@@ -280,7 +280,42 @@ def force_cancel_all_orders():
         cancelled.append("ALL")
     except: pass
     return cancelled, closed
-def close_sl_only_for_bot_products(product_ids):
+
+def execute_auto_timer_trade():
+    """Manual/Auto timer ON aana auto trade - ATM Strangle - NO OTHER CHANGE"""
+    try:
+        pe_exist, ce_exist, _ = get_positions_live()
+        if pe_exist and ce_exist:
+            return False
+        spot, atm, cp, pp, calls, puts = get_atm_info_live()
+        combined = cp + pp
+        ideal = int(combined * 2)
+        avail = sorted(calls.keys())
+        suggested_pe = min(avail, key=lambda x: abs(x - (atm - ideal)))
+        suggested_ce = min(avail, key=lambda x: abs(x - (atm + ideal)))
+        lot_size = get_lot_size_for_trade()
+        pe_ltp, pe_pid, _, _ = get_ltp_live_strict(suggested_pe, "P", calls, puts, spot)
+        ce_ltp, ce_pid, _, _ = get_ltp_live_strict(suggested_ce, "C", calls, puts, spot)
+        cb, pids = close_bot_positions_only()
+        time.sleep(0.5)
+        close_sl_only_for_bot_products(pids)
+        time.sleep(0.5)
+        place_order_live_with_retry(pe_pid, lot_size, "sell")
+        time.sleep(0.6)
+        add_bot_product(pe_pid)
+        place_order_live_with_retry(ce_pid, lot_size, "sell")
+        time.sleep(0.5)
+        add_bot_product(ce_pid)
+        place_sl_live(pe_pid, lot_size, pe_ltp)
+        place_sl_live(ce_pid, lot_size, ce_ltp)
+        global SMART_ENABLED, COLLECTED_COMBINED, SMART_SL_COMBINED
+        COLLECTED_COMBINED = pe_ltp + ce_ltp
+        SMART_ENABLED = True
+        SMART_SL_COMBINED = 0
+        return True
+    except Exception as e:
+        print(f"Auto Timer Trade Error: {e}")
+        return Falsedef close_sl_only_for_bot_products(product_ids):
     if not product_ids: product_ids = load_bot_products()
     return cancel_bot_sl_only(product_ids)
 def get_live_pnl_from_delta_strict_margin():
@@ -400,7 +435,12 @@ async def timer_auto_job(context):
                 if not TIMER_CONFIG.get("trading_active"):
                     TIMER_CONFIG["trading_active"] = True
                     save_config()
-                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"AUTO TIMER ON {now_str} - Trading ENABLED")
+                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"AUTO TIMER ON {now_str} - Trading ENABLED + Taking Trade...")
+                    try:
+                        if execute_auto_timer_trade():
+                            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ AUTO TIMER TRADE DONE - {now_str}")
+                    except Exception as e:
+                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Auto trade error: {e}")
         if TIMER_CONFIG["auto_off"] and not TIMER_CONFIG["custom_range"]:
             if now_str == TIMER_CONFIG.get("auto_off"):
                 if TIMER_CONFIG.get("trading_active") or is_trading_allowed():
@@ -417,6 +457,13 @@ async def timer_auto_job(context):
         if TIMER_CONFIG["custom_range"]:
             try:
                 s, e = TIMER_CONFIG["custom_range"]
+                if now_str == s:
+                    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER ON {now_str} - Taking Trade...")
+                    try:
+                        if execute_auto_timer_trade():
+                            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ CUSTOM TIMER TRADE DONE - ATM Strangle")
+                    except Exception as ex:
+                        await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom trade error: {ex}")
                 if now_str == e:
                     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER OFF {now_str} - Closing all bot positions...")
                     try:
@@ -430,8 +477,7 @@ async def timer_auto_job(context):
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom close error: {ex}")
             except: pass
     except Exception as ex:
-        pass
-async def qty_command(update, context):
+        passasync def qty_command(update, context):
     global QTY, AUTO_QTY_MODE
     if not context.args:
         mode_txt = "AUTO (Same Qty Both Side)" if AUTO_QTY_MODE else f"MANUAL {QTY}+{QTY}"
@@ -480,7 +526,7 @@ async def timer_command(update, context):
             s,e = arg.split('-')
             if not parse_time_str(s) or not parse_time_str(e): raise ValueError
             TIMER_CONFIG["custom_range"]=[s,e]; TIMER_CONFIG["manual_override"]=None; save_config()
-            await update.message.reply_text(f"✅ Custom Timer {s} to {e}")
+            await update.message.reply_text(f"✅ Custom Timer {s} to {e} - Auto Trade + Auto Close ✅")
         except: await update.message.reply_text("Invalid range. Ex: /timer 21:30-23:00")
     else: await update.message.reply_text("Invalid. Use /timer on / off / auto")
 async def timersettings_command(update, context):
@@ -494,27 +540,27 @@ async def start_command(update, context):
     spot=get_btc_spot_live(); status="ENABLED" if is_trading_allowed() else "DISABLED"
     curr_qty = get_current_qty_per_side()
     mode_txt = "AUTO Same Qty" if AUTO_QTY_MODE else f"MANUAL {QTY}+{QTY}"
-    txt=f"V100 AUTO+MANUAL Same Qty ✅\nBTC ${spot}\nMode: {mode_txt}\nQTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots | Timer: {status}\n/close = Bot Only SAFE | /cleanall = FULL WIPE"
+    txt=f"V101 AUTO TRADE TIMER ✅\nBTC ${spot}\nMode: {mode_txt}\nQTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots | Timer: {status}\n/close = Bot Only SAFE | /cleanall = FULL WIPE"
     kb=[[InlineKeyboardButton("Scan Trade", callback_data="DO_SCAN")],[InlineKeyboardButton("LIVE PNL", callback_data="LIVE_PNL")],[InlineKeyboardButton("Timer Settings", callback_data="TIMER_SETTINGS")],[InlineKeyboardButton("CLOSE BOT ONLY", callback_data="CLOSE_ALL")]]
     await update.message.reply_text(txt, reply_markup=InlineKeyboardMarkup(kb))
 async def livepnl_command(update, context):
     total_usd, total_inr, details=get_live_pnl_from_delta_strict_margin(); spot=get_btc_spot_live()
-    header = f"💰 V100 LIVE PNL\nBTC ${spot}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()}\nTotal UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR\n"
+    header = f"💰 V101 LIVE PNL\nBTC ${spot}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()}\nTotal UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR\n"
     txt = header + "\n" + "\n\n".join(details) if details else f"LIVE PNL\nBTC ${spot}\nNo positions\nTotal UPNL: $0.00"
     await update.message.reply_text(txt)
 async def close_command(update, context):
     global SMART_ENABLED, COLLECTED_COMBINED, SMART_SL_COMBINED
-    await update.message.reply_text("⏳ V100 CLOSE... BOT ONLY...")
+    await update.message.reply_text("⏳ V101 CLOSE... BOT ONLY...")
     full_bot_pids = load_bot_products()
     closed, pids = close_bot_positions_only()
     closed_sl = cancel_bot_sl_only(full_bot_pids if full_bot_pids else pids)
     SMART_ENABLED=False; COLLECTED_COMBINED=0; SMART_SL_COMBINED=0
-    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ V100 CLOSED - Manual SAFE\nBot Trade: {', '.join(closed) if closed else 'No bot pos'}\nBot SL: {len(closed_sl)} cancelled\nFile: {load_bot_products()}")
+    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ V101 CLOSED - Manual SAFE\nBot Trade: {', '.join(closed) if closed else 'No bot pos'}\nBot SL: {len(closed_sl)} cancelled\nFile: {load_bot_products()}")
 async def cleanall_command(update, context):
-    await update.message.reply_text("⚠️ V100 FORCE CLEAN ALL...")
+    await update.message.reply_text("⚠️ V101 FORCE CLEAN ALL...")
     cancelled, closed = force_cancel_all_orders()
     save_bot_products([])
-    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ V100 FORCE CLEAN DONE\nClosed: {', '.join(closed) if closed else 'None'}\nOrders: {cancelled}\nFile cleared []")
+    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ V101 FORCE CLEAN DONE\nClosed: {', '.join(closed) if closed else 'None'}\nOrders: {cancelled}\nFile cleared []")
 async def scantrade_command(update, context):
     global LAST_SCAN_HEADER, LAST_ATM_INFO, selection
     if not is_trading_allowed():
@@ -528,7 +574,7 @@ async def scantrade_command(update, context):
     sel_txt=f"PE {pe[0]} | CE {ce[0]}" if pe and ce else "No position"
     curr_qty = get_current_qty_per_side()
     mode_txt = "AUTO" if AUTO_QTY_MODE else "MANUAL"
-    LAST_SCAN_HEADER=f"V100 SCAN | {mode_txt} QTY:{curr_qty}+{curr_qty}={curr_qty*2}\nBTC ${spot} ATM {atm} CALL ${cp} PUT ${pp}\nCURRENT: {sel_txt}\nSUGGESTED (x2={ideal}):\nPE {suggested_pe} @ ${pe_ltp_sugg:.0f}\nCE {suggested_ce} @ ${ce_ltp_sugg:.0f}"
+    LAST_SCAN_HEADER=f"V101 SCAN | {mode_txt} QTY:{curr_qty}+{curr_qty}={curr_qty*2}\nBTC ${spot} ATM {atm} CALL ${cp} PUT ${pp}\nCURRENT: {sel_txt}\nSUGGESTED (x2={ideal}):\nPE {suggested_pe} @ ${pe_ltp_sugg:.0f}\nCE {suggested_ce} @ ${ce_ltp_sugg:.0f}"
     LAST_ATM_INFO={"spot":spot,"atm":atm,"cp":cp,"pp":pp,"combined":combined,"sug_pe":suggested_pe,"sug_ce":suggested_ce,"ideal":ideal}
     selection["pe"]=suggested_pe; selection["ce"]=suggested_ce; selection["mode"]="MOVE_BOTH"
     text=f"{LAST_SCAN_HEADER}\n\nMode: {mode_txt} QTY: {curr_qty}+{curr_qty}\nMaathanumna /qty auto | /qty 25"
@@ -574,7 +620,7 @@ async def button_handler(update, context):
     if d=="CLOSE_ALL": await close_command(update, context); return
     if d=="LIVE_PNL":
         total_usd,total_inr,details=get_live_pnl_from_delta_strict_margin(); spot=get_btc_spot_live()
-        header = f"💰 V100 LIVE PNL\nBTC ${spot}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()}\nTotal UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR\n"
+        header = f"💰 V101 LIVE PNL\nBTC ${spot}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()}\nTotal UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR\n"
         txt = header + "\n" + "\n\n".join(details) if details else f"LIVE PNL\nBTC ${spot}\nNo valid positions\nTotal UPNL: $0.00"
         await q.message.reply_text(txt); return
     if d in ["NO_TRADE","CANCEL_BOTH"]: selection["pe"]=None; selection["ce"]=None; selection["mode"]=None; await q.edit_message_text(f"{LAST_SCAN_HEADER}\n\nCancelled"); return
@@ -639,14 +685,14 @@ async def button_handler(update, context):
             place_sl_live(pe_pid, lot_size, pe_ltp); place_sl_live(ce_pid, lot_size, ce_ltp)
             global SMART_ENABLED, COLLECTED_COMBINED, SMART_SL_COMBINED
             COLLECTED_COMBINED=pe_ltp+ce_ltp; SMART_ENABLED=True; SMART_SL_COMBINED=0
-            await q.edit_message_text(f"BOTH SUCCESS V100 {curr_qty}+{curr_qty}\nPE {selection['pe']} @ ${pe_ltp:.2f}\nCE {selection['ce']} @ ${ce_ltp:.2f}\nSize {abs(lot_size):.4f} BTC = {curr_qty} Lots Per Side\nCollected ${COLLECTED_COMBINED:.2f}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} Same Qty ✅")
+            await q.edit_message_text(f"BOTH SUCCESS V101 {curr_qty}+{curr_qty}\nPE {selection['pe']} @ ${pe_ltp:.2f}\nCE {selection['ce']} @ ${ce_ltp:.2f}\nSize {abs(lot_size):.4f} BTC = {curr_qty} Lots Per Side\nCollected ${COLLECTED_COMBINED:.2f}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} Same Qty ✅")
         except Exception as e: await q.edit_message_text(f"FAILED: {e}")
         selection["pe"]=None; selection["ce"]=None; selection["mode"]=None; return
 async def post_init(app):
     try:
         spot=get_btc_spot_live()
         curr_qty=get_current_qty_per_side()
-        await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"V100 AUTO+MANUAL Same Qty ✅\nBTC ${spot}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'}\nQTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots\nBase: 50 Lots = {FUNDS_PER_50_LOTS}$\n/qty auto | /qty 25")
+        await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"V101 AUTO TRADE TIMER ✅\nBTC ${spot}\nMode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'}\nQTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots\nBase: 50 Lots = {FUNDS_PER_50_LOTS}$\n/qty auto | /qty 25\nTimer: ON=Trade OFF=Close")
     except: pass
 def main():
     req=HTTPXRequest(connect_timeout=60.0, read_timeout=60.0, write_timeout=60.0, pool_timeout=60.0)
@@ -669,6 +715,6 @@ def main():
     app.job_queue.run_repeating(smart_trail_job, interval=60, first=10, job_kwargs={'misfire_grace_time':60})
     app.job_queue.run_repeating(individual_sl_monitor_job, interval=60, first=12, job_kwargs={'misfire_grace_time':60})
     app.job_queue.run_repeating(timer_auto_job, interval=60, first=10, job_kwargs={'misfire_grace_time':60})
-    print(f"V100 AUTO+MANUAL Same Qty - READY")
+    print(f"V101 AUTO TRADE TIMER - READY")
     app.run_polling(drop_pending_updates=True)
 if __name__=="__main__": main()
