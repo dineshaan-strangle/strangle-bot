@@ -280,7 +280,7 @@ def force_cancel_all_orders():
         cancelled.append("ALL")
     except: pass
     return cancelled, closed
-    def execute_auto_timer_trade():
+def execute_auto_timer_trade():
     try:
         pe_exist, ce_exist, _ = get_positions_live()
         if pe_exist and ce_exist:
@@ -481,28 +481,34 @@ async def timer_auto_job(context):
     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID,text=f"Custom timer check error: {ex}")
  except Exception as ex: print(f"timer_auto_job error: {ex}")
         print(f"timer_auto_job error: {ex}")
-        async def qty_command(update, context):
+async def qty_command(update, context):
     global QTY, AUTO_QTY_MODE
     if not context.args:
         mode_txt = "AUTO (Same Qty Both Side)" if AUTO_QTY_MODE else f"MANUAL {QTY}+{QTY}"
         curr_qty = get_current_qty_per_side()
-        await update.message.reply_text(f"Current Mode: {mode_txt}\nLive QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Total\nBase: 50 Lots = {FUNDS_PER_50_LOTS}$\n\nUsage:\n/qty auto -> Auto Wallet Base\n/qty 25 -> Manual 25+25\n/qty 43 -> Manual 43+43"); return
+        await update.message.reply_text(f"Current Mode: {mode_txt}\nLive QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Total\nBase: 50 Lots = {FUNDS_PER_50_LOTS}$\n\nUsage:\n/qty auto -> Auto Wallet Base\n/qty 25 -> Manual 25+25")
+        return
     arg = context.args[0].lower()
     if arg == "auto":
-        AUTO_QTY_MODE=True; save_config()
+        AUTO_QTY_MODE = True
+        save_config()
         curr_qty = get_current_qty_per_side()
         bal = get_wallet_balance()
-        await update.message.reply_text(f"✅ AUTO MODE ON\nWallet: ${bal:.2f}\nBase: 50 Lots = ${FUNDS_PER_50_LOTS}\nAuto QTY: {curr_qty} Call + {curr_qty} Put = {curr_qty*2} Lots Total\nSame Qty Confirmed ✅")
+        await update.message.reply_text(f"✅ AUTO MODE ON\nWallet: ${bal:.2f}\nBase: 50 Lots = ${FUNDS_PER_50_LOTS}\nAuto QTY: {curr_qty} Call + {curr_qty} Put = {curr_qty*2} Lots Total")
         return
     try:
-        q=int(context.args[0])
-        if q<1 or q>100: await update.message.reply_text("QTY 1 to 100 only"); return
-        QTY=q; AUTO_QTY_MODE=False; save_config()
-        await update.message.reply_text(f"✅ MANUAL MODE\nQTY set to {QTY} Call + {QTY} Put = {QTY*2} Total\nSame Qty Both Side ✅\nSize: {abs(get_lot_size_for_trade()):.4f} BTC")
-    except: await update.message.reply_text("Invalid. Use /qty auto or /qty 25")
+        q = int(context.args[0])
+        if q < 1 or q > 100:
+            await update.message.reply_text("QTY 1 to 100 only")
+            return
+        QTY = q
+        AUTO_QTY_MODE = False
+        save_config()
+        await update.message.reply_text(f"✅ MANUAL MODE\nQTY set to {QTY} Call + {QTY} Put = {QTY*2} Total")
+    except:
+        await update.message.reply_text("Invalid. Use /qty auto or /qty 25")
 
-async def setontime_command(update, context):
-    if not context.args: await update.message.reply_text(f"ON: {TIMER_CONFIG['auto_on']}\nUsage: /setontime 21:30"); return
+async def setontime_command(update, context):    if not context.args: await update.message.reply_text(f"ON: {TIMER_CONFIG['auto_on']}\nUsage: /setontime 21:30"); return
     t=context.args[0]
     if not parse_time_str(t): await update.message.reply_text("Invalid time"); return
     TIMER_CONFIG["auto_on"]=t; TIMER_CONFIG["manual_override"]=None; save_config()
