@@ -436,8 +436,9 @@ async def timer_auto_job(context):
     try:
         if TIMER_CONFIG["manual_override"] is not None:
             return
-        now_dt = datetime.datetime.now()
+        now_dt = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
         now_str = now_dt.strftime("%H:%M")
+        print(f"[{now_str} IST] TIMER CHECK Custom:{TIMER_CONFIG['custom_range']} Auto ON:{TIMER_CONFIG['auto_on']}")
         if TIMER_CONFIG["auto_on"] and not TIMER_CONFIG["custom_range"]:
             if now_str == TIMER_CONFIG.get("auto_on"):
                 if not TIMER_CONFIG.get("trading_active"):
