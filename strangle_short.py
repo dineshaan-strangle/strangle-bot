@@ -486,7 +486,7 @@ async def timer_auto_job(context):
             except: pass
     except Exception as ex:
         pass
-        async def qty_command(update, context):
+async def qty_command(update, context):
     global QTY, AUTO_QTY_MODE
     if not context.args:
         mode_txt = "AUTO (Same Qty Both Side)" if AUTO_QTY_MODE else f"MANUAL {QTY}+{QTY}"
