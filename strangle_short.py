@@ -558,7 +558,13 @@ async def button_handler(update, context):
         if d=="TIMER_ON": TIMER_CONFIG["manual_override"]=True; TIMER_CONFIG["trading_active"]=True; save_config(); await q.message.reply_text("✅ Manual ON")
         elif d=="TIMER_OFF": TIMER_CONFIG["manual_override"]=False; TIMER_CONFIG["trading_active"]=False; save_config(); await q.message.reply_text("❌ Manual OFF")
         elif d=="TIMER_AUTO": TIMER_CONFIG["manual_override"]=None; TIMER_CONFIG["custom_range"]=None; save_config(); await q.message.reply_text(f"✅ AUTO ON:{TIMER_CONFIG['auto_on']} OFF:{TIMER_CONFIG['auto_off']}")
-        else: await timersettings_command(update, context)
+                else: 
+            curr_qty = get_current_qty_per_side()
+            mode_txt = "AUTO" if AUTO_QTY_MODE else "MANUAL"
+            status="ENABLED" if is_trading_allowed() else "DISABLED"
+            txt=f"TIMER SETTINGS\nMode: {mode_txt}\nQTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots\nAuto ON: {TIMER_CONFIG['auto_on']}\nAuto OFF: {TIMER_CONFIG['auto_off']}\nStatus: {status}"
+            kb=[[InlineKeyboardButton("Timer ON", callback_data="TIMER_ON"), InlineKeyboardButton("Timer OFF", callback_data="TIMER_OFF"), InlineKeyboardButton("AUTO", callback_data="TIMER_AUTO")]]
+            await q.message.reply_text(txt, reply_markup=InlineKeyboardMarkup(kb))
         return
     if d=="DO_SCAN": await scantrade_command(update, context); return
     if d=="CLOSE_ALL": await close_command(update, context); return
