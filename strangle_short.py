@@ -478,7 +478,7 @@ async def timer_auto_job(context):
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ CUSTOM TIMER TRADE DONE\n\nBTC: ${btc_price}")
                     except Exception as ex:
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"Custom trade error: {ex}")
-                if now_str == e:
+if now_str == e:
                     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"CUSTOM TIMER OFF {now_str} - Closing all bot positions...")
                     try:
                         closed, pids = close_bot_positions_only()
