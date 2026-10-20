@@ -315,7 +315,9 @@ def execute_auto_timer_trade():
         return True
     except Exception as e:
         print(f"Auto Timer Trade Error: {e}")
-        return Falsedef close_sl_only_for_bot_products(product_ids):
+    return False
+
+def close_sl_only_for_bot_products(product_ids):
     if not product_ids: product_ids = load_bot_products()
     return cancel_bot_sl_only(product_ids)
 def get_live_pnl_from_delta_strict_margin():
@@ -350,10 +352,10 @@ def get_live_pnl_from_delta_strict_margin():
                 pnl = (entry - mark) * size_btc
                 total_usd += pnl
                 details.append(f"{sym}\n  Entry ${entry:.2f} -> Now ${mark:.2f}\n  {abs(size_contracts)} lots ({size_btc:.4f} BTC) => PNL ${pnl:.4f} USD")
-            except Exception as e:
-                details.append(f"Error: {e}")
-                continue
-    except Exception as e:
+                except Exception as e:
+        print(f"Auto Timer Trade Error: {e}")
+        return False
+except Exception as e:
         return 0.0, 0.0, [f"Error: {e}"]
     if not details:
         return 0.0, 0.0, ["No positions"]
