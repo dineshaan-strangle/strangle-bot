@@ -7,15 +7,14 @@ from flask import Flask
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from telegram.error import Conflict, NetworkError
 
-# ========== WORLD BEST V7 PRO CONFIG ==========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 PORT = int(os.getenv("PORT", 10000))
 
 TOTAL_WALLET = 61.77
 TRADE_PERCENT = 0.40
-TRADE_WALLET = round(TOTAL_WALLET * TRADE_PERCENT, 2)  # $24.70
-MAIN_WALLET = round(TOTAL_WALLET - TRADE_WALLET, 2)     # $37.07
-RISK_PER_TRADE = round(TRADE_WALLET * 0.25, 2) # $6.17
+TRADE_WALLET = round(TOTAL_WALLET * TRADE_PERCENT, 2)
+MAIN_WALLET = round(TOTAL_WALLET - TRADE_WALLET, 2)
+RISK_PER_TRADE = round(TRADE_WALLET * 0.25, 2)
 
 IS_SCANNING = False
 BOT_INSTANCE = None
@@ -154,28 +153,20 @@ def auto_scan_loop(bot):
             except Exception as e:
                 print(f"Auto scan error: {e}", flush=True)
 
-# ========== BOT RUNNER - 100% CONFLICT FIXED ==========
 def run_bot():
     global BOT_INSTANCE
     print("WORLD BEST V7 PRO STARTING...", flush=True)
     token_clean = TOKEN.strip() if TOKEN else None
-    print(f"TOKEN CHECK: {'FOUND - Len '+str(len(token_clean)) if token_clean else 'MISSING!'}", flush=True)
-
     if not token_clean:
         print("ERROR: TELEGRAM_BOT_TOKEN missing!", flush=True)
         while True:
             time.sleep(60)
 
-    # Main retry loop with Conflict handling
     while True:
         updater = None
         try:
             print("Creating Updater...", flush=True)
-            # FIX: Add timeout to avoid hanging getUpdates
             updater = Updater(token_clean, use_context=True, request_kwargs={'read_timeout': 20, 'connect_timeout': 20})
-            print("Updater created OK", flush=True)
-            
-            # FIX 1: Delete webhook BEFORE get_me - clears old instance
             print("Deleting webhook before verify...", flush=True)
             try:
                 updater.bot.delete_webhook(drop_pending_updates=True)
@@ -184,13 +175,11 @@ def run_bot():
             except Exception as e:
                 print(f"Webhook delete skip: {e}", flush=True)
 
-            # Verify bot username
             me = updater.bot.get_me()
             print(f"Bot verified: @{me.username} - ID {me.id}", flush=True)
             
             BOT_INSTANCE = updater.bot
             dp = updater.dispatcher
-
             dp.add_handler(CommandHandler("start", start_cmd))
             dp.add_handler(CommandHandler("balance", balance_cmd))
             dp.add_handler(CommandHandler("scan", scan_cmd))
@@ -200,35 +189,30 @@ def run_bot():
             dp.add_handler(MessageHandler(Filters.text & ~Filters.command, unknown_msg))
 
             print("Starting polling...", flush=True)
-            # FIX 2: drop_pending_updates=True + clean start
             updater.start_polling(drop_pending_updates=True, timeout=20)
             print(f"Polling LIVE! Trade ${TRADE_WALLET} - SUCCESS!", flush=True)
 
             threading.Thread(target=auto_scan_loop, args=(BOT_INSTANCE,), daemon=True).start()
             
-            # This blocks forever until error - DO NOT LOOP HERE
-            updater.idle()
-            print("Idle exited - will restart", flush=True)
-            break  # If idle exits cleanly, break loop
+            while True:
+                time.sleep(60)
 
         except Conflict as e:
-            print(f"CONFLICT ERROR: {e} - Another instance running! Waiting 30s...", flush=True)
+            print(f"CONFLICT ERROR: {e} - Waiting 30s...", flush=True)
             try:
                 if updater:
                     updater.stop()
             except:
                 pass
-            # FIX 3: On Conflict, force delete webhook + long wait
             try:
                 from telegram import Bot
                 temp_bot = Bot(token=token_clean)
                 temp_bot.delete_webhook(drop_pending_updates=True)
-                print("Forced webhook delete on Conflict!", flush=True)
             except:
                 pass
-            time.sleep(30)  # Wait 30s for other instance to die
+            time.sleep(30)
 
-        except (NetworkError, Exception) as e:
+        except Exception as e:
             print(f"Bot Error: {e} - Retry in 15s", flush=True)
             traceback.print_exc()
             try:
