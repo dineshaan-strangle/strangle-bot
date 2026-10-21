@@ -201,7 +201,7 @@ def run_bot():
 
             print("Starting polling...", flush=True)
             # FIX 2: drop_pending_updates=True + clean start
-            updater.start_polling(drop_pending_updates=True, clean=True, timeout=20)
+            updater.start_polling(drop_pending_updates=True, timeout=20)
             print(f"Polling LIVE! Trade ${TRADE_WALLET} - SUCCESS!", flush=True)
 
             threading.Thread(target=auto_scan_loop, args=(BOT_INSTANCE,), daemon=True).start()
