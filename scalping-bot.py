@@ -5,6 +5,7 @@ import random
 import traceback
 from flask import Flask
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.error import Conflict, NetworkError
 
 # ========== WORLD BEST V7 PRO CONFIG ==========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -153,7 +154,7 @@ def auto_scan_loop(bot):
             except Exception as e:
                 print(f"Auto scan error: {e}", flush=True)
 
-# ========== BOT RUNNER - 100% FIXED ==========
+# ========== BOT RUNNER - 100% CONFLICT FIXED ==========
 def run_bot():
     global BOT_INSTANCE
     print("WORLD BEST V7 PRO STARTING...", flush=True)
@@ -165,12 +166,24 @@ def run_bot():
         while True:
             time.sleep(60)
 
+    # Main retry loop with Conflict handling
     while True:
+        updater = None
         try:
             print("Creating Updater...", flush=True)
-            updater = Updater(token_clean, use_context=True)
+            # FIX: Add timeout to avoid hanging getUpdates
+            updater = Updater(token_clean, use_context=True, request_kwargs={'read_timeout': 20, 'connect_timeout': 20})
             print("Updater created OK", flush=True)
             
+            # FIX 1: Delete webhook BEFORE get_me - clears old instance
+            print("Deleting webhook before verify...", flush=True)
+            try:
+                updater.bot.delete_webhook(drop_pending_updates=True)
+                time.sleep(2)
+                print("Webhook deleted - Conflict cleared!", flush=True)
+            except Exception as e:
+                print(f"Webhook delete skip: {e}", flush=True)
+
             # Verify bot username
             me = updater.bot.get_me()
             print(f"Bot verified: @{me.username} - ID {me.id}", flush=True)
@@ -186,26 +199,43 @@ def run_bot():
             dp.add_handler(CommandHandler("help", help_cmd))
             dp.add_handler(MessageHandler(Filters.text & ~Filters.command, unknown_msg))
 
-            print("Deleting webhook...", flush=True)
-            try:
-                updater.bot.delete_webhook(drop_pending_updates=True)
-            except:
-                pass
-            print("Webhook deleted - Conflict cleared!", flush=True)
-            time.sleep(3)
-
             print("Starting polling...", flush=True)
-            updater.start_polling(drop_pending_updates=True)
+            # FIX 2: drop_pending_updates=True + clean start
+            updater.start_polling(drop_pending_updates=True, clean=True, timeout=20)
             print(f"Polling LIVE! Trade ${TRADE_WALLET} - SUCCESS!", flush=True)
 
             threading.Thread(target=auto_scan_loop, args=(BOT_INSTANCE,), daemon=True).start()
             
-            # Keep polling alive - idle blocks here
+            # This blocks forever until error - DO NOT LOOP HERE
             updater.idle()
+            print("Idle exited - will restart", flush=True)
+            break  # If idle exits cleanly, break loop
 
-        except Exception as e:
+        except Conflict as e:
+            print(f"CONFLICT ERROR: {e} - Another instance running! Waiting 30s...", flush=True)
+            try:
+                if updater:
+                    updater.stop()
+            except:
+                pass
+            # FIX 3: On Conflict, force delete webhook + long wait
+            try:
+                from telegram import Bot
+                temp_bot = Bot(token=token_clean)
+                temp_bot.delete_webhook(drop_pending_updates=True)
+                print("Forced webhook delete on Conflict!", flush=True)
+            except:
+                pass
+            time.sleep(30)  # Wait 30s for other instance to die
+
+        except (NetworkError, Exception) as e:
             print(f"Bot Error: {e} - Retry in 15s", flush=True)
             traceback.print_exc()
+            try:
+                if updater:
+                    updater.stop()
+            except:
+                pass
             time.sleep(15)
 
 if __name__ == "__main__":
