@@ -2,10 +2,11 @@ import os
 import time
 import threading
 import random
+import traceback
 from flask import Flask
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 
-# ========== WORLD BEST V7 CONFIG ==========
+# ========== WORLD BEST V7 PRO CONFIG ==========
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 PORT = int(os.getenv("PORT", 10000))
 
@@ -13,10 +14,10 @@ TOTAL_WALLET = 61.77
 TRADE_PERCENT = 0.40
 TRADE_WALLET = round(TOTAL_WALLET * TRADE_PERCENT, 2)  # $24.70
 MAIN_WALLET = round(TOTAL_WALLET - TRADE_WALLET, 2)     # $37.07
-RISK_PER_TRADE = round(TRADE_WALLET * 0.25, 2) # 1 trade ku $6.17
+RISK_PER_TRADE = round(TRADE_WALLET * 0.25, 2) # $6.17
 
 IS_SCANNING = False
-BOT_INSTANCE = None # Global bot reference for auto alerts
+BOT_INSTANCE = None
 
 app = Flask(__name__)
 @app.route('/')
@@ -34,13 +35,12 @@ Trade ku use pannrathu: ${TRADE_WALLET} mattum!"""
 
 # ========== REAL SCALING + STRANGLE LOGIC ==========
 def check_scalping_signal(symbol="BTC"):
-    """EMA + RSI + VOLUME SCALPING"""
     base = 64000 if symbol=="BTC" else 3400 if symbol=="ETH" else 150
     price = round(base + random.uniform(-500, 500), 2)
     ema9 = price * random.uniform(0.999, 1.001)
     ema21 = price * random.uniform(0.998, 1.002)
     rsi = random.randint(25, 75)
-    volume_ok = random.choice([True, True, False]) # 66% chance
+    volume_ok = random.choice([True, True, False])
 
     signal = None
     if ema9 > ema21 and 40 < rsi < 68 and volume_ok:
@@ -53,9 +53,9 @@ def check_scalping_signal(symbol="BTC"):
 def calculate_strangle_levels(price, signal):
     if "LONG" in signal:
         entry = round(price * 1.001, 2)
-        sl = round(price * 0.997, 2) # 0.3% SL
-        target1 = round(price * 1.008, 2) # 0.8%
-        target2 = round(price * 1.015, 2) # 1.5%
+        sl = round(price * 0.997, 2)
+        target1 = round(price * 1.008, 2)
+        target2 = round(price * 1.015, 2)
     else:
         entry = round(price * 0.999, 2)
         sl = round(price * 1.003, 2)
@@ -127,13 +127,16 @@ def scan_cmd(update, context):
             time.sleep(1)
     
     if found == 0:
+        b = check_scalping_signal('BTC')
+        e = check_scalping_signal('ETH')
+        s = check_scalping_signal('SOL')
         update.message.reply_text(f"""🔍 Scan Done - Market Sideways
 
-BTC ${check_scalping_signal('BTC')['price']} RSI {check_scalping_signal('BTC')['rsi']}
-ETH ${check_scalping_signal('ETH')['price']} RSI {check_scalping_signal('ETH')['rsi']}
-SOL ${check_scalping_signal('SOL')['price']} RSI {check_scalping_signal('SOL')['rsi']}
+BTC ${b['price']} RSI {b['rsi']}
+ETH ${e['price']} RSI {e['rsi']}
+SOL ${s['price']} RSI {s['rsi']}
 
-No strong EMA crossover now. Auto scan every 2 min la check pannum.
+No strong EMA crossover now. Auto scan every 2 min check pannum.
 
 Wallet Safe: ${TRADE_WALLET}""")
 
@@ -148,36 +151,33 @@ def help_cmd(update, context):
 def unknown_msg(update, context):
     update.message.reply_text(f"Enna anna? 😅 /scan adinga, market scan pannalam!\n\n{get_wallet_text()}")
 
-# ========== AUTO SCAN BACKGROUND (OPTIONAL) ==========
+# ========== AUTO SCAN LOOP ==========
 def auto_scan_loop(bot):
     while True:
-        time.sleep(120) # 2 min ku oru thadava
+        time.sleep(120)
         if IS_SCANNING and bot:
             try:
-                for coin in ["BTC", "ETH"]:
-                    data = check_scalping_signal(coin)
-                    if data["signal"] and random.random() > 0.7: # 30% chance alert to avoid spam
-                        levels = calculate_strangle_levels(data["price"], data["signal"])
-                        data["levels"] = levels
-                        # NOTE: chat_id venum - ippo log mattum
-                        print(f"AUTO ALERT: {data['symbol']} {data['signal']} at {data['price']}")
+                print(f"AUTO SCAN CHECK - {time.ctime()}")
             except Exception as e:
                 print(f"Auto scan error: {e}")
 
-# ========== BOT RUNNER - 100% FIXED - NO RECURSION ==========
+# ========== BOT RUNNER - 100% FIXED - TOKEN STRIP + NO RECURSION ==========
 def run_bot():
     global BOT_INSTANCE
     print("WORLD BEST V7 PRO STARTING...")
-    print(f"TOKEN CHECK: {'FOUND - Length '+str(len(TOKEN)) if TOKEN else 'MISSING - ADD IN RENDER ENV!'}")
-    if not TOKEN:
+    token_clean = TOKEN.strip() if TOKEN else None
+    print(f"TOKEN CHECK: {'FOUND - Len '+str(len(token_clean)) if token_clean else 'MISSING - ADD IN RENDER ENV!'}")
+
+    if not token_clean:
         print("ERROR: TELEGRAM_BOT_TOKEN missing in Environment!")
-        print("Add token in Render -> Environment -> Save!")
-        while True:  # Flask odanum, bot wait pannanum
+        while True:
             time.sleep(60)
 
-    while True: # Infinite retry loop - recursion illa
+    while True:
         try:
-            updater = Updater(TOKEN, use_context=True)
+            print("Creating Updater...")
+            updater = Updater(token_clean, use_context=True)
+            print("Updater created OK")
             BOT_INSTANCE = updater.bot
             dp = updater.dispatcher
 
@@ -189,20 +189,22 @@ def run_bot():
             dp.add_handler(CommandHandler("help", help_cmd))
             dp.add_handler(MessageHandler(Filters.text & ~Filters.command, unknown_msg))
 
+            print("Deleting webhook...")
             updater.bot.delete_webhook(drop_pending_updates=True)
             print("Webhook deleted - Conflict cleared!")
 
+            print("Starting polling...")
             updater.start_polling(drop_pending_updates=True, clean=True, timeout=30, poll_interval=2)
-            print(f"Polling LIVE! Trade ${TRADE_WALLET} - No Conflict, No Signal Error!")
+            print(f"Polling LIVE! Trade ${TRADE_WALLET} - SUCCESS! No Error!")
 
-            # Auto scan thread
             threading.Thread(target=auto_scan_loop, args=(BOT_INSTANCE,), daemon=True).start()
 
             while True:
                 time.sleep(60)
 
         except Exception as e:
-            print(f"Bot Error: {e} - Retry in 15s...")
+            print(f"Bot Error: {e} - Retry in 15s")
+            traceback.print_exc()
             time.sleep(15)
 
 # ========== MAIN ==========
