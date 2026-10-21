@@ -168,9 +168,12 @@ def auto_scan_loop(bot):
 def run_bot():
     global BOT_INSTANCE
     print("WORLD BEST V7 PRO STARTING...")
+    print(f"TOKEN CHECK: {'FOUND - Length '+str(len(TOKEN)) if TOKEN else 'MISSING - ADD IN RENDER ENV!'}")
     if not TOKEN:
         print("ERROR: TELEGRAM_BOT_TOKEN missing in Environment!")
-        return
+        print("Add token in Render -> Environment -> Save!")
+        while True:  # Flask odanum, bot wait pannanum
+            time.sleep(60)
 
     while True: # Infinite retry loop - recursion illa
         try:
