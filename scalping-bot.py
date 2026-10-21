@@ -194,7 +194,7 @@ def run_bot():
             print("Webhook deleted - Conflict cleared!")
 
             print("Starting polling...")
-            updater.start_polling(drop_pending_updates=True, clean=True, timeout=30, poll_interval=2)
+            updater.start_polling(drop_pending_updates=True, timeout=30, poll_interval=2)
             print(f"Polling LIVE! Trade ${TRADE_WALLET} - SUCCESS! No Error!")
 
             threading.Thread(target=auto_scan_loop, args=(BOT_INSTANCE,), daemon=True).start()
