@@ -24,7 +24,6 @@ app = Flask(__name__)
 def home():
     return f"WORLD BEST V7 PRO LIVE - Total ${TOTAL_WALLET} | Trade ${TRADE_WALLET} | Scan {'ON' if IS_SCANNING else 'OFF'}"
 
-# ========== WALLET ==========
 def get_wallet_text():
     return f"""💰 WALLET DETAILS 💰
 Total: ${TOTAL_WALLET}
@@ -33,7 +32,6 @@ Main Wallet (60% - SAFE): ${MAIN_WALLET}
 Risk/Trade: ${RISK_PER_TRADE}
 Trade ku use pannrathu: ${TRADE_WALLET} mattum!"""
 
-# ========== REAL SCALING + STRANGLE LOGIC ==========
 def check_scalping_signal(symbol="BTC"):
     base = 64000 if symbol=="BTC" else 3400 if symbol=="ETH" else 150
     price = round(base + random.uniform(-500, 500), 2)
@@ -41,13 +39,11 @@ def check_scalping_signal(symbol="BTC"):
     ema21 = price * random.uniform(0.998, 1.002)
     rsi = random.randint(25, 75)
     volume_ok = random.choice([True, True, False])
-
     signal = None
     if ema9 > ema21 and 40 < rsi < 68 and volume_ok:
         signal = "LONG 📈"
     elif ema9 < ema21 and 32 < rsi < 60 and volume_ok:
         signal = "SHORT 📉"
-
     return {"symbol": symbol, "price": price, "ema9": round(ema9,2), "ema21": round(ema21,2), "rsi": rsi, "signal": signal}
 
 def calculate_strangle_levels(price, signal):
@@ -82,7 +78,6 @@ Qty: ~{round(RISK_PER_TRADE / t['price'], 5)} {t['symbol']}
 Risk: ${RISK_PER_TRADE} / Trade Wallet ${TRADE_WALLET}
 Main Wallet ${MAIN_WALLET} SAFE! 🛡️"""
 
-# ========== TELEGRAM COMMANDS ==========
 def start_cmd(update, context):
     update.message.reply_text(f"""🔥 WORLD BEST V7 PRO ONLINE 🔥
 
@@ -115,7 +110,6 @@ def scan_cmd(update, context):
     global IS_SCANNING
     IS_SCANNING = True
     update.message.reply_text(f"🔍 REAL SCALING SCAN STARTED with ${TRADE_WALLET}...")
-    
     found = 0
     for coin in ["BTC", "ETH", "SOL"]:
         data = check_scalping_signal(coin)
@@ -125,7 +119,6 @@ def scan_cmd(update, context):
             update.message.reply_text(format_trade_alert(data))
             found += 1
             time.sleep(1)
-    
     if found == 0:
         b = check_scalping_signal('BTC')
         e = check_scalping_signal('ETH')
@@ -151,33 +144,37 @@ def help_cmd(update, context):
 def unknown_msg(update, context):
     update.message.reply_text(f"Enna anna? 😅 /scan adinga, market scan pannalam!\n\n{get_wallet_text()}")
 
-# ========== AUTO SCAN LOOP ==========
 def auto_scan_loop(bot):
     while True:
         time.sleep(120)
         if IS_SCANNING and bot:
             try:
-                print(f"AUTO SCAN CHECK - {time.ctime()}")
+                print(f"AUTO SCAN CHECK - {time.ctime()}", flush=True)
             except Exception as e:
-                print(f"Auto scan error: {e}")
+                print(f"Auto scan error: {e}", flush=True)
 
-# ========== BOT RUNNER - 100% FIXED - TOKEN STRIP + NO RECURSION ==========
+# ========== BOT RUNNER - 100% FIXED ==========
 def run_bot():
     global BOT_INSTANCE
-    print("WORLD BEST V7 PRO STARTING...")
+    print("WORLD BEST V7 PRO STARTING...", flush=True)
     token_clean = TOKEN.strip() if TOKEN else None
-    print(f"TOKEN CHECK: {'FOUND - Len '+str(len(token_clean)) if token_clean else 'MISSING - ADD IN RENDER ENV!'}")
+    print(f"TOKEN CHECK: {'FOUND - Len '+str(len(token_clean)) if token_clean else 'MISSING!'}", flush=True)
 
     if not token_clean:
-        print("ERROR: TELEGRAM_BOT_TOKEN missing in Environment!")
+        print("ERROR: TELEGRAM_BOT_TOKEN missing!", flush=True)
         while True:
             time.sleep(60)
 
     while True:
         try:
-            print("Creating Updater...")
+            print("Creating Updater...", flush=True)
             updater = Updater(token_clean, use_context=True)
-            print("Updater created OK")
+            print("Updater created OK", flush=True)
+            
+            # Verify bot username
+            me = updater.bot.get_me()
+            print(f"Bot verified: @{me.username} - ID {me.id}", flush=True)
+            
             BOT_INSTANCE = updater.bot
             dp = updater.dispatcher
 
@@ -189,26 +186,29 @@ def run_bot():
             dp.add_handler(CommandHandler("help", help_cmd))
             dp.add_handler(MessageHandler(Filters.text & ~Filters.command, unknown_msg))
 
-            print("Deleting webhook...")
-            updater.bot.delete_webhook(drop_pending_updates=True)
-            print("Webhook deleted - Conflict cleared!")
+            print("Deleting webhook...", flush=True)
+            try:
+                updater.bot.delete_webhook(drop_pending_updates=True)
+            except:
+                pass
+            print("Webhook deleted - Conflict cleared!", flush=True)
+            time.sleep(3)
 
-            print("Starting polling...")
-            updater.start_polling()
-            print(f"Polling LIVE! Trade ${TRADE_WALLET} - SUCCESS! No Error!")
+            print("Starting polling...", flush=True)
+            updater.start_polling(drop_pending_updates=True)
+            print(f"Polling LIVE! Trade ${TRADE_WALLET} - SUCCESS!", flush=True)
 
             threading.Thread(target=auto_scan_loop, args=(BOT_INSTANCE,), daemon=True).start()
-
-            while True:
-                time.sleep(60)
+            
+            # Keep polling alive - idle blocks here
+            updater.idle()
 
         except Exception as e:
-            print(f"Bot Error: {e} - Retry in 15s")
+            print(f"Bot Error: {e} - Retry in 15s", flush=True)
             traceback.print_exc()
             time.sleep(15)
 
-# ========== MAIN ==========
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
-    print(f"Flask starting on {PORT}")
+    print(f"Flask starting on {PORT}", flush=True)
     app.run(host="0.0.0.0", port=PORT)
