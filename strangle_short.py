@@ -29,7 +29,7 @@ CONFIG_FILE="timer_config.json"
 QTY=25
 AUTO_QTY_MODE=True
 FUNDS_PER_50_LOTS=56.93
-TIMER_CONFIG={"auto_on":"21:30","auto_off":"05:20","manual_override":None,"trading_active":False,"custom_range":None}
+TIMER_CONFIG={"auto_on":"22:15","auto_off":"05:20","manual_override":None,"trading_active":False,"custom_range":None}
 def load_config():
  global QTY,TIMER_CONFIG,AUTO_QTY_MODE
  if os.path.exists(CONFIG_FILE):
