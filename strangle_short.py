@@ -29,7 +29,7 @@ CONFIG_FILE="timer_config.json"
 QTY=25
 AUTO_QTY_MODE=True
 FUNDS_PER_50_LOTS=56.93
-TIMER_CONFIG={"auto_on":"09:07","auto_off":"09:10","manual_override":None,"trading_active":False,"custom_range":None}
+TIMER_CONFIG={"auto_on":"09:25","auto_off":"09:30","manual_override":None,"trading_active":False,"custom_range":None}
 PENDING_AUTO={"pe":None,"ce":None,"spot":0}
 def load_config():
  global QTY,TIMER_CONFIG,AUTO_QTY_MODE
@@ -337,15 +337,13 @@ async def individual_sl_monitor_job(context):
 async def timer_auto_job(context):
  global SMART_ENABLED,COLLECTED_COMBINED,SMART_SL_COMBINED,PENDING_AUTO
  try:
-  if TIMER_CONFIG["manual_override"] is not None:return
   now_t=get_ist_time();now_str=format_time_str(now_t)
   if TIMER_CONFIG["auto_on"] and not TIMER_CONFIG["custom_range"]:
    st=parse_time_str(TIMER_CONFIG["auto_on"])
    if st and st.hour==now_t.hour and st.minute==now_t.minute:
-    if not TIMER_CONFIG.get("trading_active"):
-     TIMER_CONFIG["trading_active"]=True;save_config()
-     try:
-      spot,atm,cp,pp,calls,puts=get_atm_info_live()
+    TIMER_CONFIG["trading_active"]=True;save_config()
+    try:
+     spot,atm,cp,pp,calls,puts=get_atm_info_live()
       combined=cp+pp;ideal=int(combined*2);avail=sorted(calls.keys())
       suggested_pe=min(avail,key=lambda x:abs(x-(atm-ideal)))
       suggested_ce=min(avail,key=lambda x:abs(x-(atm+ideal)))
