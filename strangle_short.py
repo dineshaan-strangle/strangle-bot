@@ -32,7 +32,7 @@ CONFIG_FILE="timer_config.json"
 QTY=25
 AUTO_QTY_MODE=True
 FUNDS_PER_50_LOTS=56.93
-TIMER_CONFIG={"auto_on":"09:50","auto_off":"09:53","manual_override":None,"trading_active":False,"custom_range":None}
+TIMER_CONFIG={"auto_on":"22:15","auto_off":"05:20","manual_override":None,"trading_active":False,"custom_range":None}
 PENDING_AUTO={"pe":None,"ce":None,"spot":0}
 # FIX 1: Duplicate prevent lock
 LAST_AUTO_TRIGGER={"on_date":None,"off_date":None}
