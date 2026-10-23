@@ -32,7 +32,7 @@ CONFIG_FILE="timer_config.json"
 QTY=25
 AUTO_QTY_MODE=True
 FUNDS_PER_50_LOTS=56.93
-TIMER_CONFIG={"auto_on":"09:07","auto_off":"09:10","manual_override":None,"trading_active":False,"custom_range":None}
+TIMER_CONFIG={"auto_on":"09:35","auto_off":"09:45","manual_override":None,"trading_active":False,"custom_range":None}
 PENDING_AUTO={"pe":None,"ce":None,"spot":0}
 
 def load_config():
