@@ -9,7 +9,7 @@ import threading
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "Bot Running V105 ATM PREMIUM FIX!"
+    return "Bot Running V106 ATM PREMIUM $130 FIX!"
 def run_web():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 threading.Thread(target=run_web, daemon=True).start()
@@ -202,11 +202,14 @@ def get_btc_spot_live():
         pass
     return 82450.0
 
+# V106 UPDATED: Priority 2.0-2.5 days for $130 premium
 def get_t2_chain_live():
     prods = delta_request("GET", "/products", auth_required=False)['result']
     now_ts = time.time()
     calls = {}
     puts = {}
+    calls_backup = {}
+    puts_backup = {}
     for p in prods:
         sym = p.get('symbol', '')
         if not (sym.startswith("C-BTC-") or sym.startswith("P-BTC-")):
@@ -216,16 +219,22 @@ def get_t2_chain_live():
             continue
         exp = datetime.datetime.fromisoformat(st.replace('Z', '+00:00')).timestamp()
         days = (exp - now_ts) / 86400
-        if not (1.5 <= days <= 2.5):
-            continue
         try:
             strike = int(float(sym.split('-')[2]))
         except:
             continue
-        if sym.startswith("C-BTC-"):
-            calls[strike] = p
-        else:
-            puts[strike] = p
+        if 2.0 <= days <= 2.5:
+            if sym.startswith("C-BTC-"):
+                calls[strike] = p
+            else:
+                puts[strike] = p
+        elif 1.5 <= days < 2.0:
+            if sym.startswith("C-BTC-"):
+                calls_backup[strike] = p
+            else:
+                puts_backup[strike] = p
+    if not calls or not puts:
+        return calls_backup, puts_backup
     return calls, puts
 
 def get_atm_info_live():
@@ -257,10 +266,25 @@ def get_ltp_live_strict(strike, otype, calls, puts, spot):
         tick = delta_request("GET", f"/tickers/{prod['symbol']}", auth_required=False)['result']
         ltp = float(tick.get('mark_price') or 0)
         if ltp < 10:
-            ltp = spot
+            ltp = ltp * spot if ltp > 0 else spot * 0.002
         return ltp, prod.get('id', 0), prod.get('symbol', ''), prod
     except:
         return spot, 0, "", {}
+
+# V106 NEW: Find strike with min $130 premium
+def find_strike_with_min_premium(target_strike, otype, calls, puts, spot, min_prem=130):
+    avail_dict = calls if otype == "C" else puts
+    if not avail_dict:
+        return target_strike
+    sorted_strikes = sorted(avail_dict.keys(), key=lambda x: abs(x - target_strike))
+    for strike in sorted_strikes[:8]:
+        try:
+            ltp, _, _, _ = get_ltp_live_strict(strike, otype, calls, puts, spot)
+            if ltp >= min_prem:
+                return strike
+        except:
+            continue
+    return sorted_strikes[0]
 
 BOT_PRODUCTS_FILE = "bot_products.json"
 
@@ -369,7 +393,6 @@ def close_bot_positions_only():
     if closed_pids:
         remove_bot_products(closed_pids)
     return closed, closed_pids
-
 def cancel_bot_sl_only(bot_pids):
     bot_set = set([int(x) for x in bot_pids]) if bot_pids else set()
     if not bot_set:
@@ -438,10 +461,11 @@ def execute_auto_timer_trade():
             return False
         spot, atm, cp, pp, calls, puts = get_atm_info_live()
         combined = cp + pp
-        ideal = int(combined * 2)
-        avail = sorted(calls.keys())
-        suggested_pe = min(avail, key=lambda x: abs(x - (atm - ideal)))
-        suggested_ce = min(avail, key=lambda x: abs(x - (atm + ideal)))
+        ideal = int(combined * 1.5)
+        target_pe = atm - ideal
+        target_ce = atm + ideal
+        suggested_pe = find_strike_with_min_premium(target_pe, "P", calls, puts, spot, 130)
+        suggested_ce = find_strike_with_min_premium(target_ce, "C", calls, puts, spot, 130)
         lot_size = get_lot_size_for_trade()
         pe_ltp, pe_pid, _, _ = get_ltp_live_strict(suggested_pe, "P", calls, puts, spot)
         ce_ltp, ce_pid, _, _ = get_ltp_live_strict(suggested_ce, "C", calls, puts, spot)
@@ -556,6 +580,7 @@ def get_combined_ltp_live():
     except:
         return None
 
+# V106 UPDATED: 50% TARGET LOGIC
 async def smart_trail_job(context):
     global SMART_ENABLED, COLLECTED_COMBINED, SMART_SL_COMBINED
     if not SMART_ENABLED or COLLECTED_COMBINED == 0:
@@ -563,6 +588,16 @@ async def smart_trail_job(context):
     try:
         combined = get_combined_ltp_live()
         if combined is None:
+            return
+        target_price = COLLECTED_COMBINED * 0.50
+        if combined <= target_price:
+            total_usd, _, _ = get_live_pnl_from_delta_strict_margin()
+            closed, pids = close_bot_positions_only()
+            close_sl_only_for_bot_products(pids)
+            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ 50% TARGET HIT! Collected ${COLLECTED_COMBINED:.2f} -> Now ${combined:.2f} Profit ${COLLECTED_COMBINED - combined:.2f} Closed: {', '.join(closed)} FINAL {total_usd:.4f} USD")
+            SMART_ENABLED = False
+            COLLECTED_COMBINED = 0
+            SMART_SL_COMBINED = 0
             return
         new_sl = get_trailing_sl(COLLECTED_COMBINED, combined)
         if new_sl is not None:
@@ -581,8 +616,8 @@ async def smart_trail_job(context):
                 SMART_ENABLED = False
                 COLLECTED_COMBINED = 0
                 SMART_SL_COMBINED = 0
-    except:
-        pass
+    except Exception as e:
+        print(f"smart trail error {e}")
 
 async def individual_sl_monitor_job(context):
     global PREV_PE_STRIKE, PREV_CE_STRIKE, PREV_TOTAL_USD, SMART_ENABLED, COLLECTED_COMBINED, SMART_SL_COMBINED
@@ -628,18 +663,18 @@ async def timer_auto_job(context):
                 try:
                     spot, atm, cp, pp, calls, puts = get_atm_info_live()
                     combined = cp + pp
-                    ideal = int(combined * 2)
-                    avail = sorted(calls.keys())
-                    suggested_pe = min(avail, key=lambda x: abs(x - (atm - ideal)))
-                    suggested_ce = min(avail, key=lambda x: abs(x - (atm + ideal)))
+                    ideal = int(combined * 1.5)
+                    target_pe = atm - ideal
+                    target_ce = atm + ideal
+                    suggested_pe = find_strike_with_min_premium(target_pe, "P", calls, puts, spot, 130)
+                    suggested_ce = find_strike_with_min_premium(target_ce, "C", calls, puts, spot, 130)
                     pe_ltp, _, _, _ = get_ltp_live_strict(suggested_pe, "P", calls, puts, spot)
                     ce_ltp, _, _, _ = get_ltp_live_strict(suggested_ce, "C", calls, puts, spot)
                     PENDING_AUTO = {"pe": suggested_pe, "ce": suggested_ce, "spot": spot, "atm": atm}
                     for i in range(3):
                         await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"ALARM {i+1}/3 - AUTO TIMER {now_str} PERMISSION NEEDED!", disable_notification=False)
                     curr_qty = get_current_qty_per_side()
-                    # FIXED: ATM PREMIUM ADDED HERE
-                    txt = f"AUTO TIMER ON {now_str} - PERMISSION NEEDED!\nBTC ${spot:.0f} ATM {atm}\nATM Premium CE {atm} @ ${cp:.0f} PE @ ${pp:.0f} Total ${cp+pp:.0f}\nPE {suggested_pe} @ ${pe_ltp:.0f}\nCE {suggested_ce} @ ${ce_ltp:.0f}\nQTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots\nTrade edukava?"
+                    txt = f"AUTO TIMER ON {now_str} - PERMISSION NEEDED!\nBTC ${spot:.0f} ATM {atm}\nATM Premium CE {atm} @ ${cp:.0f} PE @ ${pp:.0f} Total ${cp+pp:.0f}\nV106 PE {suggested_pe} @ ${pe_ltp:.0f} (>=130)\nCE {suggested_ce} @ ${ce_ltp:.0f} (>=130)\nQTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots\nTrade edukava?"
                     kb = [[InlineKeyboardButton(f"YES TRADE PE {suggested_pe}+CE {suggested_ce}", callback_data=f"AUTO_YES_{suggested_pe}_{suggested_ce}"), InlineKeyboardButton("NO SKIP", callback_data="AUTO_NO")]]
                     await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=txt, reply_markup=InlineKeyboardMarkup(kb))
                 except Exception as e:
@@ -818,27 +853,27 @@ async def start_command(update, context):
     status = "ENABLED" if is_trading_allowed() else "DISABLED"
     curr_qty = get_current_qty_per_side()
     mode_txt = "AUTO Same Qty" if AUTO_QTY_MODE else f"MANUAL {QTY}+{QTY}"
-    txt = f"V105 ATM PREMIUM FIX BTC ${spot:.0f} Mode: {mode_txt} QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots | Timer: {status} IST: {format_time_str(get_ist_time())}"
+    txt = f"V106 ATM PREMIUM $130 FIX BTC ${spot:.0f} Mode: {mode_txt} QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots | Timer: {status} IST: {format_time_str(get_ist_time())}"
     kb = [[InlineKeyboardButton("Scan Trade", callback_data="DO_SCAN")], [InlineKeyboardButton("LIVE PNL", callback_data="LIVE_PNL")], [InlineKeyboardButton("Timer Settings", callback_data="TIMER_SETTINGS")], [InlineKeyboardButton("CLOSE BOT ONLY", callback_data="CLOSE_ALL")]]
     await update.effective_message.reply_text(txt, reply_markup=InlineKeyboardMarkup(kb))
 
 async def livepnl_command(update, context):
     total_usd, total_inr, details = get_live_pnl_from_delta_strict_margin()
     spot = get_btc_spot_live()
-    header = f"V105 LIVE PNL BTC ${spot:.0f} Mode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()} IST:{format_time_str(get_ist_time())} Total UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR "
+    header = f"V106 LIVE PNL BTC ${spot:.0f} Mode: {'AUTO' if AUTO_QTY_MODE else 'MANUAL'} QTY: {get_current_qty_per_side()}+{get_current_qty_per_side()} IST:{format_time_str(get_ist_time())} Total UPNL: ${total_usd:.2f} USD = {total_inr:.2f} INR "
     txt = header + " ".join(details) if details else f"LIVE PNL BTC ${spot:.0f} No positions Total UPNL: $0.00"
     await update.effective_message.reply_text(txt)
 
 async def close_command(update, context):
     global SMART_ENABLED, COLLECTED_COMBINED, SMART_SL_COMBINED
-    await update.effective_message.reply_text("V105 CLOSE... BOT ONLY...")
+    await update.effective_message.reply_text("V106 CLOSE... BOT ONLY...")
     full_bot_pids = load_bot_products()
     closed, pids = close_bot_positions_only()
     closed_sl = cancel_bot_sl_only(full_bot_pids if full_bot_pids else pids)
     SMART_ENABLED = False
     COLLECTED_COMBINED = 0
     SMART_SL_COMBINED = 0
-    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"V105 CLOSED - Bot Trade: {', '.join(closed) if closed else 'No bot pos'} Bot SL: {len(closed_sl)} cancelled")
+    await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"V106 CLOSED - Bot Trade: {', '.join(closed) if closed else 'No bot pos'} Bot SL: {len(closed_sl)} cancelled")
 
 async def cleanall_command(update, context):
     await update.effective_message.reply_text("FORCE CLEAN ALL...")
@@ -855,18 +890,18 @@ async def scantrade_command(update, context):
     spot, atm, cp, pp, calls, puts = get_atm_info_live()
     pe, ce, _ = get_positions_live()
     combined = cp + pp
-    ideal = int(combined * 2)
+    ideal = int(combined * 1.5)
     pe_target = atm - ideal
     ce_target = atm + ideal
+    suggested_pe = find_strike_with_min_premium(pe_target, "P", calls, puts, spot, 130)
+    suggested_ce = find_strike_with_min_premium(ce_target, "C", calls, puts, spot, 130)
     avail = sorted(calls.keys())
-    suggested_pe = min(avail, key=lambda x: abs(x - pe_target))
-    suggested_ce = min(avail, key=lambda x: abs(x - ce_target))
     pe_ltp_sugg, _, _, _ = get_ltp_live_strict(suggested_pe, "P", calls, puts, spot)
     ce_ltp_sugg, _, _, _ = get_ltp_live_strict(suggested_ce, "C", calls, puts, spot)
     sel_txt = f"PE {pe[0]} | CE {ce[0]}" if pe and ce else "No position"
     curr_qty = get_current_qty_per_side()
     mode_txt = "AUTO" if AUTO_QTY_MODE else "MANUAL"
-    LAST_SCAN_HEADER = f"V105 SCAN | {mode_txt} QTY:{curr_qty}+{curr_qty}={curr_qty*2} BTC ${spot:.0f} ATM {atm} CALL ${cp} PUT ${pp} CURRENT: {sel_txt} SUGGESTED (x2={ideal}): PE {suggested_pe} @ ${pe_ltp_sugg:.0f} CE {suggested_ce} @ ${ce_ltp_sugg:.0f}"
+    LAST_SCAN_HEADER = f"V106 SCAN | {mode_txt} QTY:{curr_qty}+{curr_qty}={curr_qty*2} BTC ${spot:.0f} ATM {atm} CALL ${cp} PUT ${pp} CURRENT: {sel_txt} SUGGESTED (x2={ideal}): PE {suggested_pe} @ ${pe_ltp_sugg:.0f} CE {suggested_ce} @ ${ce_ltp_sugg:.0f} [MIN $130 FILTER]"
     LAST_ATM_INFO = {"spot": spot, "atm": atm, "cp": cp, "pp": pp, "combined": combined, "sug_pe": suggested_pe, "sug_ce": suggested_ce, "ideal": ideal}
     selection["pe"] = suggested_pe
     selection["ce"] = suggested_ce
@@ -877,7 +912,7 @@ async def scantrade_command(update, context):
 
 def build_keyboard_live(atm, combined, calls, puts, spot):
     mode = selection.get("mode", "MOVE_BOTH")
-    ideal = int(combined * 2)
+    ideal = int(combined * 1.5)
     pe_c = atm - ideal
     ce_c = atm + ideal
     avail = sorted(calls.keys())
@@ -999,11 +1034,12 @@ async def button_handler(update, context):
     pe_exist, ce_exist, _ = get_positions_live()
     def get_default_strikes():
         combined = LAST_ATM_INFO.get("combined", cp + pp)
-        ideal = int(combined * 2)
+        ideal = int(combined * 1.5)
         pe_c = atm - ideal
         ce_c = atm + ideal
-        avail = sorted(calls.keys())
-        return sorted(avail, key=lambda x: abs(x - pe_c))[0], sorted(avail, key=lambda x: abs(x - ce_c))[0], ideal
+        target_pe = find_strike_with_min_premium(pe_c, "P", calls, puts, spot, 130)
+        target_ce = find_strike_with_min_premium(ce_c, "C", calls, puts, spot, 130)
+        return target_pe, target_ce, ideal
     if d in ["MOVE_CE", "MOVE_PE", "MOVE_BOTH"]:
         def_pe, def_ce, ideal = get_default_strikes()
         if d == "MOVE_BOTH":
@@ -1100,7 +1136,7 @@ async def button_handler(update, context):
             COLLECTED_COMBINED = pe_ltp + ce_ltp
             SMART_ENABLED = True
             SMART_SL_COMBINED = 0
-            await q.edit_message_text(f"BOTH SUCCESS PE {selection['pe']} @ ${pe_ltp:.2f} CE {selection['ce']} @ ${ce_ltp:.2f} Size {abs(lot_size):.4f} BTC Collected ${COLLECTED_COMBINED:.2f}")
+            await q.edit_message_text(f"BOTH SUCCESS PE {selection['pe']} @ ${pe_ltp:.2f} CE {selection['ce']} @ ${ce_ltp:.2f} Size {abs(lot_size):.4f} BTC Collected ${COLLECTED_COMBINED:.2f} TARGET ${COLLECTED_COMBINED*0.5:.2f}")
         except Exception as e:
             await q.edit_message_text(f"FAILED: {e}")
         selection["pe"] = None
@@ -1112,7 +1148,7 @@ async def post_init(app):
     try:
         spot = get_btc_spot_live()
         curr_qty = get_current_qty_per_side()
-        await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"V105 ATM PREMIUM FIX BTC ${spot:.0f} IST:{format_time_str(get_ist_time())} QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots - ATM PREMIUM ADDED!")
+        await app.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"V106 $130 PREMIUM FIX BTC ${spot:.0f} IST:{format_time_str(get_ist_time())} QTY: {curr_qty}+{curr_qty} = {curr_qty*2} Lots - MIN $130 FILTER + 50% TARGET!")
     except:
         pass
 
@@ -1137,7 +1173,7 @@ def main():
     app.job_queue.run_repeating(smart_trail_job, interval=60, first=10, job_kwargs={'misfire_grace_time': 60})
     app.job_queue.run_repeating(individual_sl_monitor_job, interval=60, first=12, job_kwargs={'misfire_grace_time': 60})
     app.job_queue.run_repeating(timer_auto_job, interval=30, first=10, job_kwargs={'misfire_grace_time': 60})
-    print(f"V105 ATM PREMIUM FIX - READY - IST:{format_time_str(get_ist_time())}")
+    print(f"V106 $130 PREMIUM FIX - READY - IST:{format_time_str(get_ist_time())}")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
